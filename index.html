@@ -30,7 +30,11 @@ import {
   ShieldCheck,
   Zap,
   Plus,
-  UserPlus
+  UserPlus,
+  Activity,
+  Wifi,
+  Database,
+  Lock
 } from 'lucide-react';
 
 // Firebase Imports
@@ -55,7 +59,27 @@ import {
   orderBy
 } from 'firebase/firestore';
 
-// --- 擴充後的範例資料 (包含身分證、生日、交通) ---
+// --- 您的 Firebase 設定 ---
+const firebaseConfig = {
+  apiKey: "AIzaSyBtfR8N9Dw9kG3jQSfJSs0p0MLvlQaOR74",
+  authDomain: "crm-sys-4184a.firebaseapp.com",
+  projectId: "crm-sys-4184a",
+  storageBucket: "crm-sys-4184a.firebasestorage.app",
+  messagingSenderId: "943273685158",
+  appId: "1:943273685158:web:8ca441dd78dcb5b956c467",
+  measurementId: "G-2M2W340ZKB"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+// const analytics = getAnalytics(app); // 暫時註解掉 Analytics 避免干擾 Debug
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// 固定 App ID
+const appId = 'crm-system-v1';
+
+// --- 擴充後的範例資料 ---
 const INITIAL_CSV_DATA = `日期,活動名稱,講師,客戶姓名,金額,交通方式,身分證字號,生日
 2023-11-05,高山攝影團,張大師,王小明,5000,共乘,A123456789,1990-05-20
 2023-11-05,高山攝影團,張大師,李小美,5000,自行前往,B223456789,1992-08-15
@@ -75,45 +99,21 @@ const INITIAL_PROJECTS = [
   { name: '2024 年度講師招募', owner: 'Ken', status: 'Done', deadline: '2023-11-30' },
 ];
 
-// --- 任務模板 ---
 const DEFAULT_TASKS_TEMPLATE = [
   { id: 'insurance', type: 'insurance', name: '辦理保險', fields: [{ label: '保單號碼', value: '' }], completed: false },
   { id: 'pre_letter', type: 'pre_letter', name: '寄送行前信', fields: [{ label: '寄送日期', value: '' }], completed: false },
   { id: 'post_letter', type: 'post_letter', name: '寄送花絮信', fields: [{ label: '照片連結', value: '' }], completed: false },
 ];
 
-// 系統預設模板 (移除價格)
 const DEFAULT_EVENT_TEMPLATES = [
   { id: 'default_1', name: '登山團模板', eventName: '週末登山團', instructor: '張大師', isSystem: true },
   { id: 'default_2', name: '露營團模板', eventName: '星空露營', instructor: '林博士', isSystem: true },
   { id: 'default_3', name: '課程模板', eventName: '攝影教學', instructor: '陳教練', isSystem: true },
 ];
 
-// --- Firebase 初始化 (使用您的自訂設定) ---
-const firebaseConfig = {
-  apiKey: "AIzaSyBtfR8N9Dw9kG3jQSfJSs0p0MLvlQaOR74",
-  authDomain: "crm-sys-4184a.firebaseapp.com",
-  projectId: "crm-sys-4184a",
-  storageBucket: "crm-sys-4184a.firebasestorage.app",
-  messagingSenderId: "943273685158",
-  appId: "1:943273685158:web:8ca441dd78dcb5b956c467",
-  measurementId: "G-2M2W340ZKB"
-};
-
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const analytics = getAnalytics(app);
-const auth = getAuth(app);
-const db = getFirestore(app);
-
-// 使用固定的 App ID 以避免在您的資料庫中產生亂數路徑
-const appId = 'crm-system-v1';
-
 // --- Helper Functions ---
 const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
 const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
-
-// 計算天數差異 (用於顏色邏輯)
 const getDaysDiff = (targetDateStr) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -122,31 +122,23 @@ const getDaysDiff = (targetDateStr) => {
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 };
 
-// 任務顏色邏輯核心
 const getTaskStatusStyle = (taskType, eventDateStr) => {
-  const daysDiff = getDaysDiff(eventDateStr); // 正數=未來, 負數=過去
-  
+  const daysDiff = getDaysDiff(eventDateStr);
   if (taskType === 'insurance') {
-    // 活動前3天要解決
     if (daysDiff <= 3 && daysDiff >= 0) return { color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200', label: '急迫 (剩3天)' };
     if (daysDiff < 0) return { color: 'text-slate-400', bg: 'bg-slate-100', border: 'border-slate-200', label: '活動已過' };
     return { color: 'text-slate-600', bg: 'bg-white', border: 'border-slate-200', label: '待辦' };
   }
-  
   if (taskType === 'post_letter') {
-    // 活動後寄送: 隔天(綠), 第2天(橘), 第3天(紅)
     const daysSinceEvent = -daysDiff; 
-    if (daysSinceEvent < 1) return { color: 'text-slate-400', bg: 'bg-slate-50', border: 'border-slate-200', label: '活動未結束' }; // 活動還沒發生
+    if (daysSinceEvent < 1) return { color: 'text-slate-400', bg: 'bg-slate-50', border: 'border-slate-200', label: '活動未結束' };
     if (daysSinceEvent === 1) return { color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-200', label: '建議寄送 (Day 1)' };
     if (daysSinceEvent === 2) return { color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-200', label: '快寄出 (Day 2)' };
     if (daysSinceEvent >= 3) return { color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200', label: '延遲 (Day 3+)' };
   }
-
-  // 預設
   return { color: 'text-slate-600', bg: 'bg-white', border: 'border-slate-200', label: '' };
 };
 
-// --- 子元件定義 ---
 const NavItem = ({ id, icon: Icon, label, activeTab, setActiveTab }) => (
   <button
     onClick={() => setActiveTab(id)}
@@ -161,46 +153,122 @@ const NavItem = ({ id, icon: Icon, label, activeTab, setActiveTab }) => (
   </button>
 );
 
-// --- 快速新增活動 Modal (包含批量日期選擇與多講師) ---
+// --- Debug Panel Component (新功能) ---
+const DebugPanel = ({ onClose }) => {
+  const [logs, setLogs] = useState([]);
+  const [status, setStatus] = useState({
+    auth: 'pending',
+    firestore: 'pending',
+    network: 'pending'
+  });
+
+  const addLog = (msg, type = 'info') => {
+    setLogs(prev => [...prev, { msg, type, time: new Date().toLocaleTimeString() }]);
+  };
+
+  useEffect(() => {
+    const runDiagnostics = async () => {
+      addLog("開始診斷系統...", 'info');
+
+      // 1. 檢查 Auth
+      try {
+        addLog("正在嘗試匿名登入...", 'info');
+        const userCred = await signInAnonymously(auth);
+        addLog(`登入成功！User ID: ${userCred.user.uid}`, 'success');
+        setStatus(prev => ({ ...prev, auth: 'success' }));
+      } catch (e) {
+        addLog(`登入失敗: ${e.message}`, 'error');
+        setStatus(prev => ({ ...prev, auth: 'error' }));
+        if (e.code === 'auth/admin-restricted-operation') {
+          addLog("提示: 請去 Firebase Console -> Authentication -> Sign-in method 開啟 'Anonymous'。", 'warning');
+        }
+        return; // Auth 失敗就不測 DB 了
+      }
+
+      // 2. 檢查 Firestore 寫入權限
+      try {
+        addLog("正在測試資料庫寫入權限...", 'info');
+        const testRef = doc(db, 'artifacts', appId, 'public', 'data', 'debug_test', 'ping');
+        await setDoc(testRef, { timestamp: new Date().toISOString(), status: 'ok' });
+        addLog("資料庫寫入成功！", 'success');
+        setStatus(prev => ({ ...prev, firestore: 'success' }));
+      } catch (e) {
+        addLog(`資料庫寫入失敗: ${e.message}`, 'error');
+        setStatus(prev => ({ ...prev, firestore: 'error' }));
+        if (e.message.includes('permission-denied')) {
+          addLog("重要提示: 這是 '權限不足' 錯誤。", 'warning');
+          addLog("請去 Firebase Console -> Firestore Database -> Rules", 'warning');
+          addLog("將規則改成: allow read, write: if true;", 'warning');
+        }
+      }
+    };
+
+    runDiagnostics();
+  }, []);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4">
+      <div className="bg-slate-900 text-green-400 rounded-xl shadow-2xl w-full max-w-2xl h-[600px] flex flex-col font-mono text-sm border border-slate-700">
+        <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800 rounded-t-xl">
+          <div className="flex items-center space-x-2">
+            <Activity className="animate-pulse" size={18} />
+            <span className="font-bold text-white">系統診斷終端機</span>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20}/></button>
+        </div>
+        
+        <div className="p-4 grid grid-cols-3 gap-4 border-b border-slate-700 bg-slate-800/50">
+          <div className={`flex flex-col items-center p-3 rounded ${status.auth === 'success' ? 'bg-green-900/30 text-green-400' : status.auth === 'error' ? 'bg-red-900/30 text-red-400' : 'bg-slate-800 text-slate-500'}`}>
+            <UserPlus size={24} className="mb-2"/>
+            <span className="font-bold">身分驗證</span>
+            <span className="text-xs mt-1">{status.auth === 'success' ? 'PASS' : status.auth === 'error' ? 'FAIL' : 'Checking...'}</span>
+          </div>
+          <div className={`flex flex-col items-center p-3 rounded ${status.firestore === 'success' ? 'bg-green-900/30 text-green-400' : status.firestore === 'error' ? 'bg-red-900/30 text-red-400' : 'bg-slate-800 text-slate-500'}`}>
+            <Database size={24} className="mb-2"/>
+            <span className="font-bold">資料庫權限</span>
+            <span className="text-xs mt-1">{status.firestore === 'success' ? 'PASS' : status.firestore === 'error' ? 'FAIL' : 'Checking...'}</span>
+          </div>
+          <div className="flex flex-col items-center p-3 rounded bg-slate-800 text-slate-400">
+            <Wifi size={24} className="mb-2"/>
+            <span className="font-bold">網路連線</span>
+            <span className="text-xs mt-1">Online</span>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {logs.map((log, idx) => (
+            <div key={idx} className={`flex space-x-2 ${log.type === 'error' ? 'text-red-400' : log.type === 'warning' ? 'text-yellow-400' : log.type === 'success' ? 'text-green-400' : 'text-slate-300'}`}>
+              <span className="text-slate-600">[{log.time}]</span>
+              <span>{log.type === 'error' ? '❌' : log.type === 'warning' ? '⚠️' : log.type === 'success' ? '✅' : 'ℹ️'}</span>
+              <span>{log.msg}</span>
+            </div>
+          ))}
+        </div>
+        
+        <div className="p-4 bg-slate-800 rounded-b-xl text-xs text-slate-500 border-t border-slate-700">
+          如果看到紅色錯誤，請依照提示前往 Firebase Console 修正設定。修正後請重新整理網頁。
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const CreateEventModal = ({ onClose, onSave, customTemplates, onAddTemplate, onDeleteTemplate, availableInstructors }) => {
-  const [mode, setMode] = useState('template'); // 'template' or 'custom'
-  const [isCreatingTemplate, setIsCreatingTemplate] = useState(false); // 是否正在建立新模板
-  
-  // 日曆選擇狀態
+  const [mode, setMode] = useState('template'); 
+  const [isCreatingTemplate, setIsCreatingTemplate] = useState(false);
   const [calendarMonth, setCalendarMonth] = useState(new Date());
-
-  // 活動表單資料 (支援多日期, 多講師)
-  const [formData, setFormData] = useState({
-    dates: [], // 選取的日期陣列
-    eventName: '',
-    instructors: [] // 講師陣列
-  });
-  
-  // 臨時講師輸入
+  const [formData, setFormData] = useState({ dates: [], eventName: '', instructors: [] });
   const [tempInstructor, setTempInstructor] = useState('');
-
-  // 新模板表單資料
-  const [newTemplateData, setNewTemplateData] = useState({
-    name: '',
-    eventName: '',
-    instructor: '' // 模板暫時維持單一講師欄位，實際建立時可轉為陣列
-  });
+  const [newTemplateData, setNewTemplateData] = useState({ name: '', eventName: '', instructor: '' });
 
   const handleTemplateSelect = (tpl) => {
-    // 模板的講師如果是字串，嘗試轉為陣列（相容舊資料）
     let tplInstructors = [];
     if (tpl.instructor) {
       tplInstructors = tpl.instructor.split(/[&,]/).map(s => s.trim());
     }
-
-    setFormData({
-      ...formData,
-      eventName: tpl.eventName,
-      instructors: tplInstructors
-    });
+    setFormData({ ...formData, eventName: tpl.eventName, instructors: tplInstructors });
   };
 
-  // 日期選擇邏輯
   const toggleDate = (year, month, day) => {
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     let newDates;
@@ -212,7 +280,6 @@ const CreateEventModal = ({ onClose, onSave, customTemplates, onAddTemplate, onD
     setFormData({ ...formData, dates: newDates });
   };
 
-  // 講師管理邏輯
   const addInstructor = (name) => {
     const cleanName = name.trim();
     if (cleanName && !formData.instructors.includes(cleanName)) {
@@ -243,14 +310,12 @@ const CreateEventModal = ({ onClose, onSave, customTemplates, onAddTemplate, onD
     setNewTemplateData({ name: '', eventName: '', instructor: '' });
   };
 
-  // 渲染迷你日曆
   const renderCalendar = () => {
     const year = calendarMonth.getFullYear();
     const month = calendarMonth.getMonth();
     const daysInMonth = getDaysInMonth(year, month);
     const firstDay = getFirstDayOfMonth(year, month);
     const days = [];
-    
     for (let i = 0; i < firstDay; i++) days.push(null);
     for (let i = 1; i <= daysInMonth; i++) days.push(i);
 
@@ -292,7 +357,6 @@ const CreateEventModal = ({ onClose, onSave, customTemplates, onAddTemplate, onD
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        {/* Header */}
         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
           <h3 className="text-xl font-bold text-slate-800 flex items-center">
             <Zap size={20} className="mr-2 text-yellow-500" />
@@ -300,176 +364,69 @@ const CreateEventModal = ({ onClose, onSave, customTemplates, onAddTemplate, onD
           </h3>
           <button onClick={onClose}><X size={24} className="text-slate-400 hover:text-slate-600"/></button>
         </div>
-        
         <div className="p-6 space-y-6 overflow-y-auto">
-          {/* 1. 選擇模式 */}
           {!isCreatingTemplate && (
             <div className="flex space-x-2 p-1 bg-slate-100 rounded-lg">
-              <button 
-                onClick={() => setMode('template')}
-                className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${mode === 'template' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}
-              >
-                使用模板
-              </button>
-              <button 
-                onClick={() => setMode('custom')}
-                className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${mode === 'custom' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}
-              >
-                完全自訂
-              </button>
+              <button onClick={() => setMode('template')} className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${mode === 'template' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}>使用模板</button>
+              <button onClick={() => setMode('custom')} className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${mode === 'custom' ? 'bg-white shadow text-blue-600' : 'text-slate-500'}`}>完全自訂</button>
             </div>
           )}
-
-          {/* 2. 模板選擇區域 */}
           {!isCreatingTemplate && mode === 'template' && (
             <div className="grid grid-cols-3 gap-3">
               {DEFAULT_EVENT_TEMPLATES.map((tpl) => (
-                <div 
-                  key={tpl.id} 
-                  onClick={() => handleTemplateSelect(tpl)}
-                  className={`border rounded-lg p-3 cursor-pointer transition-all text-center hover:bg-blue-50 relative group ${formData.eventName === tpl.eventName ? 'border-blue-500 ring-1 ring-blue-500 bg-blue-50' : 'border-slate-200'}`}
-                >
+                <div key={tpl.id} onClick={() => handleTemplateSelect(tpl)} className={`border rounded-lg p-3 cursor-pointer transition-all text-center hover:bg-blue-50 relative group ${formData.eventName === tpl.eventName ? 'border-blue-500 ring-1 ring-blue-500 bg-blue-50' : 'border-slate-200'}`}>
                   <div className="font-bold text-slate-700 text-sm mb-1">{tpl.name}</div>
                   <div className="text-xs text-slate-500">{tpl.instructor}</div>
                 </div>
               ))}
-              
               {customTemplates.map((tpl) => (
-                <div 
-                  key={tpl.id} 
-                  onClick={() => handleTemplateSelect(tpl)}
-                  className={`border rounded-lg p-3 cursor-pointer transition-all text-center hover:bg-blue-50 relative group ${formData.eventName === tpl.eventName ? 'border-blue-500 ring-1 ring-blue-500 bg-blue-50' : 'border-slate-200'}`}
-                >
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); onDeleteTemplate(tpl.id); }}
-                    className="absolute top-1 right-1 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
-                  >
-                    <X size={12} />
-                  </button>
+                <div key={tpl.id} onClick={() => handleTemplateSelect(tpl)} className={`border rounded-lg p-3 cursor-pointer transition-all text-center hover:bg-blue-50 relative group ${formData.eventName === tpl.eventName ? 'border-blue-500 ring-1 ring-blue-500 bg-blue-50' : 'border-slate-200'}`}>
+                  <button onClick={(e) => { e.stopPropagation(); onDeleteTemplate(tpl.id); }} className="absolute top-1 right-1 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"><X size={12} /></button>
                   <div className="font-bold text-blue-700 text-sm mb-1">{tpl.name}</div>
                   <div className="text-xs text-slate-500">{tpl.instructor}</div>
                 </div>
               ))}
-
-              <button 
-                onClick={() => setIsCreatingTemplate(true)}
-                className="border border-dashed border-slate-300 rounded-lg p-3 flex flex-col items-center justify-center text-slate-400 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-all"
-              >
-                <PlusCircle size={24} className="mb-1" />
-                <span className="text-xs font-medium">新增模板</span>
-              </button>
+              <button onClick={() => setIsCreatingTemplate(true)} className="border border-dashed border-slate-300 rounded-lg p-3 flex flex-col items-center justify-center text-slate-400 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-all"><PlusCircle size={24} className="mb-1" /><span className="text-xs font-medium">新增模板</span></button>
             </div>
           )}
-
-          {/* 3. 建立新模板介面 */}
           {isCreatingTemplate && (
             <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 animate-in fade-in zoom-in-95">
-              <div className="flex justify-between items-center mb-4">
-                <h4 className="font-bold text-slate-700">建立新模板</h4>
-                <button onClick={() => setIsCreatingTemplate(false)} className="text-slate-400 hover:text-slate-600 text-sm">取消</button>
-              </div>
+              <div className="flex justify-between items-center mb-4"><h4 className="font-bold text-slate-700">建立新模板</h4><button onClick={() => setIsCreatingTemplate(false)} className="text-slate-400 hover:text-slate-600 text-sm">取消</button></div>
               <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">模板名稱</label>
-                  <input type="text" className="w-full px-3 py-2 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 outline-none" 
-                    value={newTemplateData.name} onChange={e => setNewTemplateData({...newTemplateData, name: e.target.value})} />
-                </div>
+                <div><label className="block text-xs font-medium text-slate-500 mb-1">模板名稱</label><input type="text" className="w-full px-3 py-2 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 outline-none" value={newTemplateData.name} onChange={e => setNewTemplateData({...newTemplateData, name: e.target.value})} /></div>
                 <div className="grid grid-cols-2 gap-3">
-                   <div>
-                     <label className="block text-xs font-medium text-slate-500 mb-1">預設活動名稱</label>
-                     <input type="text" className="w-full px-3 py-2 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 outline-none" 
-                       value={newTemplateData.eventName} onChange={e => setNewTemplateData({...newTemplateData, eventName: e.target.value})} />
-                   </div>
-                   <div>
-                     <label className="block text-xs font-medium text-slate-500 mb-1">預設講師</label>
-                     <input type="text" className="w-full px-3 py-2 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 outline-none" 
-                       value={newTemplateData.instructor} onChange={e => setNewTemplateData({...newTemplateData, instructor: e.target.value})} />
-                   </div>
+                   <div><label className="block text-xs font-medium text-slate-500 mb-1">預設活動名稱</label><input type="text" className="w-full px-3 py-2 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 outline-none" value={newTemplateData.eventName} onChange={e => setNewTemplateData({...newTemplateData, eventName: e.target.value})} /></div>
+                   <div><label className="block text-xs font-medium text-slate-500 mb-1">預設講師</label><input type="text" className="w-full px-3 py-2 text-sm border border-slate-300 rounded focus:ring-1 focus:ring-blue-500 outline-none" value={newTemplateData.instructor} onChange={e => setNewTemplateData({...newTemplateData, instructor: e.target.value})} /></div>
                 </div>
-                <button 
-                  onClick={handleSaveNewTemplate}
-                  className="w-full py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 mt-2"
-                >
-                  儲存模板
-                </button>
+                <button onClick={handleSaveNewTemplate} className="w-full py-2 bg-blue-600 text-white rounded text-sm font-medium hover:bg-blue-700 mt-2">儲存模板</button>
               </div>
             </div>
           )}
-
-          {/* 4. 活動設定區 (日期日曆 + 多人講師) */}
           {!isCreatingTemplate && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-t border-slate-100 pt-6">
-               {/* 左側：日曆選擇器 */}
-               <div>
-                 <label className="block text-sm font-medium text-slate-700 mb-2">1. 點選日期 (可多選)</label>
-                 {renderCalendar()}
-               </div>
-
-               {/* 右側：活動資訊與講師 */}
+               <div><label className="block text-sm font-medium text-slate-700 mb-2">1. 點選日期 (可多選)</label>{renderCalendar()}</div>
                <div className="space-y-4">
-                 <div>
-                   <label className="block text-sm font-medium text-slate-700 mb-1">2. 活動名稱</label>
-                   <input type="text" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" 
-                     value={formData.eventName} onChange={e => setFormData({...formData, eventName: e.target.value})} placeholder="輸入名稱..." />
-                 </div>
-                 
+                 <div><label className="block text-sm font-medium text-slate-700 mb-1">2. 活動名稱</label><input type="text" className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" value={formData.eventName} onChange={e => setFormData({...formData, eventName: e.target.value})} placeholder="輸入名稱..." /></div>
                  <div>
                    <label className="block text-sm font-medium text-slate-700 mb-1">3. 帶團講師 (可多人)</label>
-                   
-                   {/* 已選講師標籤 */}
                    <div className="flex flex-wrap gap-2 mb-2 min-h-[38px] p-2 bg-white border border-slate-200 rounded-lg">
                       {formData.instructors.length === 0 && <span className="text-xs text-slate-400 self-center">請輸入或點選下方講師</span>}
-                      {formData.instructors.map((ins, idx) => (
-                        <div key={idx} className="flex items-center bg-blue-50 text-blue-700 px-2 py-1 rounded-md text-sm border border-blue-100">
-                          <span className="mr-1">{ins}</span>
-                          <button onClick={() => removeInstructor(ins)} className="text-blue-400 hover:text-red-500"><X size={14}/></button>
-                        </div>
-                      ))}
+                      {formData.instructors.map((ins, idx) => (<div key={idx} className="flex items-center bg-blue-50 text-blue-700 px-2 py-1 rounded-md text-sm border border-blue-100"><span className="mr-1">{ins}</span><button onClick={() => removeInstructor(ins)} className="text-blue-400 hover:text-red-500"><X size={14}/></button></div>))}
                    </div>
-
-                   {/* 輸入框 */}
-                   <div className="flex gap-2 mb-3">
-                     <input 
-                       type="text" 
-                       className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                       value={tempInstructor}
-                       onChange={(e) => setTempInstructor(e.target.value)}
-                       onKeyDown={(e) => e.key === 'Enter' && addInstructor(tempInstructor)}
-                       placeholder="輸入名字按 Enter..."
-                     />
-                     <button onClick={() => addInstructor(tempInstructor)} className="px-3 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 text-slate-600"><Plus size={18}/></button>
-                   </div>
-
-                   {/* 常用講師建議 */}
+                   <div className="flex gap-2 mb-3"><input type="text" className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" value={tempInstructor} onChange={(e) => setTempInstructor(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addInstructor(tempInstructor)} placeholder="輸入名字按 Enter..." /><button onClick={() => addInstructor(tempInstructor)} className="px-3 py-2 bg-slate-100 rounded-lg hover:bg-slate-200 text-slate-600"><Plus size={18}/></button></div>
                    <div className="space-y-2">
                      <div className="text-xs text-slate-400">常用講師名單:</div>
-                     <div className="flex flex-wrap gap-2">
-                       {availableInstructors.filter(i => !formData.instructors.includes(i)).slice(0, 8).map(ins => (
-                         <button 
-                           key={ins} 
-                           onClick={() => addInstructor(ins)}
-                           className="text-xs px-2 py-1 bg-slate-50 border border-slate-200 rounded-full text-slate-600 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition"
-                         >
-                           + {ins}
-                         </button>
-                       ))}
-                     </div>
+                     <div className="flex flex-wrap gap-2">{availableInstructors.filter(i => !formData.instructors.includes(i)).slice(0, 8).map(ins => (<button key={ins} onClick={() => addInstructor(ins)} className="text-xs px-2 py-1 bg-slate-50 border border-slate-200 rounded-full text-slate-600 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition">+ {ins}</button>))}</div>
                    </div>
                  </div>
                </div>
             </div>
           )}
         </div>
-
-        {/* Footer */}
         {!isCreatingTemplate && (
           <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end items-center">
-             <div className="mr-auto text-xs text-slate-500">
-                將建立 <span className="font-bold text-blue-600">{formData.dates.length}</span> 場活動
-             </div>
-             <button onClick={handleSubmitEvent} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">
-               批量建立
-             </button>
+             <div className="mr-auto text-xs text-slate-500">將建立 <span className="font-bold text-blue-600">{formData.dates.length}</span> 場活動</div>
+             <button onClick={handleSubmitEvent} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">批量建立</button>
           </div>
         )}
       </div>
@@ -477,155 +434,64 @@ const CreateEventModal = ({ onClose, onSave, customTemplates, onAddTemplate, onD
   );
 };
 
-// --- 任務詳情 Modal (提供 Actionable Data) ---
 const TaskDetailModal = ({ task, eventData, onClose }) => {
   const [copied, setCopied] = useState(false);
-
-  // 根據任務類型決定顯示內容
   const renderContent = () => {
     if (task.type === 'insurance') {
-      const copyText = eventData.customers.map(c => 
-        `${c.name}\t${c.id}\t${c.birthday}`
-      ).join('\n');
-
-      const handleCopy = () => {
-        navigator.clipboard.writeText(copyText);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      };
-
+      const copyText = eventData.customers.map(c => `${c.name}\t${c.id}\t${c.birthday}`).join('\n');
+      const handleCopy = () => { navigator.clipboard.writeText(copyText); setCopied(true); setTimeout(() => setCopied(false), 2000); };
       return (
         <div className="space-y-4">
-          <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg flex items-start">
-             <ShieldCheck className="text-amber-600 mt-0.5 mr-2" size={18}/>
-             <div className="text-sm text-amber-800">
-                <p className="font-bold">保險辦理資訊</p>
-                <p>請將下列名單複製並提供給保險業務。包含姓名、身分證字號與生日。</p>
-             </div>
-          </div>
-          
-          <div className="relative">
-            <div className="absolute top-2 right-2">
-              <button 
-                onClick={handleCopy}
-                className="flex items-center px-3 py-1 bg-white border border-slate-300 rounded text-xs font-medium hover:bg-slate-50 text-slate-700 shadow-sm"
-              >
-                {copied ? <CheckCircle2 size={14} className="mr-1 text-green-600"/> : <Copy size={14} className="mr-1"/>}
-                {copied ? '已複製' : '複製全部'}
-              </button>
-            </div>
-            <div className="bg-slate-100 p-4 rounded-lg font-mono text-sm max-h-60 overflow-y-auto whitespace-pre">
-              <div className="flex border-b border-slate-300 pb-2 mb-2 font-bold text-slate-500">
-                <span className="w-24">姓名</span>
-                <span className="w-32">身分證</span>
-                <span>生日</span>
-              </div>
-              {eventData.customers.map((c, idx) => (
-                <div key={idx} className="flex py-1 text-slate-800">
-                  <span className="w-24 truncate">{c.name}</span>
-                  <span className="w-32">{c.id}</span>
-                  <span>{c.birthday}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg flex items-start"><ShieldCheck className="text-amber-600 mt-0.5 mr-2" size={18}/><div className="text-sm text-amber-800"><p className="font-bold">保險辦理資訊</p><p>請將下列名單複製並提供給保險業務。包含姓名、身分證字號與生日。</p></div></div>
+          <div className="relative"><div className="absolute top-2 right-2"><button onClick={handleCopy} className="flex items-center px-3 py-1 bg-white border border-slate-300 rounded text-xs font-medium hover:bg-slate-50 text-slate-700 shadow-sm">{copied ? <CheckCircle2 size={14} className="mr-1 text-green-600"/> : <Copy size={14} className="mr-1"/>}{copied ? '已複製' : '複製全部'}</button></div><div className="bg-slate-100 p-4 rounded-lg font-mono text-sm max-h-60 overflow-y-auto whitespace-pre"><div className="flex border-b border-slate-300 pb-2 mb-2 font-bold text-slate-500"><span className="w-24">姓名</span><span className="w-32">身分證</span><span>生日</span></div>{eventData.customers.map((c, idx) => (<div key={idx} className="flex py-1 text-slate-800"><span className="w-24 truncate">{c.name}</span><span className="w-32">{c.id}</span><span>{c.birthday}</span></div>))}</div></div>
         </div>
       );
     }
-
     if (task.type === 'pre_letter') {
       const carpoolUsers = eventData.customers.filter(c => c.transport === '共乘');
       const selfUsers = eventData.customers.filter(c => c.transport !== '共乘');
-      
       const getFakeEmail = (name) => `user_${name}@example.com`;
-
       return (
         <div className="space-y-6">
-           <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg flex items-start">
-             <Mail className="text-blue-600 mt-0.5 mr-2" size={18}/>
-             <div className="text-sm text-blue-800">
-                <p className="font-bold">行前信寄送</p>
-                <p>系統已自動將客戶依據交通方式分組，請分別寄送不同版本的行前通知。</p>
-             </div>
-          </div>
-
+           <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg flex items-start"><Mail className="text-blue-600 mt-0.5 mr-2" size={18}/><div className="text-sm text-blue-800"><p className="font-bold">行前信寄送</p><p>系統已自動將客戶依據交通方式分組，請分別寄送不同版本的行前通知。</p></div></div>
           <div className="grid grid-cols-2 gap-4">
-             <div className="border border-slate-200 rounded-lg p-3">
-                <h4 className="font-bold text-slate-700 mb-2 flex items-center">
-                   🚗 共乘組 ({carpoolUsers.length})
-                </h4>
-                <div className="bg-slate-50 p-2 rounded text-xs text-slate-500 h-32 overflow-y-auto">
-                   {carpoolUsers.map(c => getFakeEmail(c.name)).join('; ')}
-                </div>
-                <button className="mt-2 text-xs text-blue-600 hover:underline">複製所有 Email</button>
-             </div>
-             <div className="border border-slate-200 rounded-lg p-3">
-                <h4 className="font-bold text-slate-700 mb-2 flex items-center">
-                   🚶 自行前往組 ({selfUsers.length})
-                </h4>
-                <div className="bg-slate-50 p-2 rounded text-xs text-slate-500 h-32 overflow-y-auto">
-                   {selfUsers.map(c => getFakeEmail(c.name)).join('; ')}
-                </div>
-                <button className="mt-2 text-xs text-blue-600 hover:underline">複製所有 Email</button>
-             </div>
+             <div className="border border-slate-200 rounded-lg p-3"><h4 className="font-bold text-slate-700 mb-2 flex items-center">🚗 共乘組 ({carpoolUsers.length})</h4><div className="bg-slate-50 p-2 rounded text-xs text-slate-500 h-32 overflow-y-auto">{carpoolUsers.map(c => getFakeEmail(c.name)).join('; ')}</div><button className="mt-2 text-xs text-blue-600 hover:underline">複製所有 Email</button></div>
+             <div className="border border-slate-200 rounded-lg p-3"><h4 className="font-bold text-slate-700 mb-2 flex items-center">🚶 自行前往組 ({selfUsers.length})</h4><div className="bg-slate-50 p-2 rounded text-xs text-slate-500 h-32 overflow-y-auto">{selfUsers.map(c => getFakeEmail(c.name)).join('; ')}</div><button className="mt-2 text-xs text-blue-600 hover:underline">複製所有 Email</button></div>
           </div>
         </div>
       );
     }
-
-    return (
-      <div className="text-slate-500 text-center py-8">
-        此任務暫無特殊執行工具，請依照一般流程處理。
-      </div>
-    );
+    return <div className="text-slate-500 text-center py-8">此任務暫無特殊執行工具，請依照一般流程處理。</div>;
   };
-
   return (
     <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 animate-in zoom-in-95 duration-200">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-          <div>
-            <div className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded inline-block mb-1">
-              {eventData.date} • {eventData.eventName}
-            </div>
-            <h3 className="text-xl font-bold text-slate-800">{task.name}</h3>
-          </div>
-          <button onClick={onClose}><X size={24} className="text-slate-400 hover:text-slate-600"/></button>
-        </div>
-        <div className="p-6 overflow-y-auto">
-          {renderContent()}
-        </div>
+        <div className="p-6 border-b border-slate-100 flex justify-between items-center"><div><div className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded inline-block mb-1">{eventData.date} • {eventData.eventName}</div><h3 className="text-xl font-bold text-slate-800">{task.name}</h3></div><button onClick={onClose}><X size={24} className="text-slate-400 hover:text-slate-600"/></button></div>
+        <div className="p-6 overflow-y-auto">{renderContent()}</div>
       </div>
     </div>
   );
 };
 
-
-// --- 主程式 ---
 export default function OperationSystem() {
   const [user, setUser] = useState(null);
-  const [activeTab, setActiveTab] = useState('tasks'); // Default to tasks to show new features
-  
-  // Data States
+  const [activeTab, setActiveTab] = useState('tasks'); 
   const [csvInput, setCsvInput] = useState(''); 
   const [remoteCsvData, setRemoteCsvData] = useState(''); 
   const [projects, setProjects] = useState([]);
   const [eventConfigs, setEventConfigs] = useState({});
-  const [customTemplates, setCustomTemplates] = useState([]); // 自訂模板
+  const [customTemplates, setCustomTemplates] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  
-  // UI States
   const [editingEvent, setEditingEvent] = useState(null);
   const [activeTaskDetail, setActiveTaskDetail] = useState(null); 
   const [showCreateEvent, setShowCreateEvent] = useState(false);
+  const [showDebug, setShowDebug] = useState(false); // Debug Panel
   const [eventsViewMode, setEventsViewMode] = useState('list'); 
   const [currentDate, setCurrentDate] = useState(new Date()); 
-
   const [parsedData, setParsedData] = useState([]);
   const [selectedCustomer, setSelectedCustomer] = useState('');
 
-  // 1. Auth 初始化
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -639,13 +505,11 @@ export default function OperationSystem() {
     return () => unsubscribe();
   }, []);
 
-  // 2. 資料監聽
   useEffect(() => {
     if (!user) return;
     setLoading(true);
-
     const settingsDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'main');
-    const templatesDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'templates'); // 模板設定
+    const templatesDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'templates'); 
     const projectsColRef = collection(db, 'artifacts', appId, 'public', 'data', 'projects');
     const eventConfigsColRef = collection(db, 'artifacts', appId, 'public', 'data', 'event_configs');
 
@@ -660,7 +524,6 @@ export default function OperationSystem() {
       }
     }, (error) => console.error("Firestore Error (Settings):", error));
 
-    // 監聽模板
     const unsubTemplates = onSnapshot(templatesDocRef, (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -722,8 +585,6 @@ export default function OperationSystem() {
     }
   }, [remoteCsvData]);
 
-  // --- Actions ---
-
   const handleSaveCSV = async (newData) => {
     if (!user) return;
     setIsSaving(true);
@@ -738,21 +599,17 @@ export default function OperationSystem() {
   };
 
   const handleCreateEvent = async (eventData) => {
-    // 批量開團：迴圈處理每個日期
     let newRows = '';
-    const instructorStr = eventData.instructors.join(' & '); // 將講師陣列合併為字串
+    const instructorStr = eventData.instructors.join(' & '); 
     eventData.dates.forEach(date => {
-       // 開團時，金額設為 0
        newRows += `\n${date},${eventData.eventName},${instructorStr},開放報名中,0,,,`;
     });
-    
     const updatedCSV = csvInput + newRows;
-    setCsvInput(updatedCSV); // Update Local
-    await handleSaveCSV(updatedCSV); // Sync Cloud
+    setCsvInput(updatedCSV); 
+    await handleSaveCSV(updatedCSV); 
     setShowCreateEvent(false);
   };
 
-  // 新增自訂模板
   const handleAddTemplate = async (newTemplate) => {
     if (!user) return;
     const templateWithId = { ...newTemplate, id: `custom_${Date.now()}` };
@@ -761,7 +618,6 @@ export default function OperationSystem() {
     await setDoc(templatesDocRef, { list: newList }, { merge: true });
   };
 
-  // 刪除自訂模板
   const handleDeleteTemplate = async (templateId) => {
     if (!user) return;
     if (!confirm("確定要刪除這個模板嗎？")) return;
@@ -780,12 +636,10 @@ export default function OperationSystem() {
     await setDoc(configDocRef, { ...currentConfig, tasks: newTasks }, { merge: true });
   };
 
-  // --- 數據聚合 ---
   const stats = useMemo(() => {
     const totalRevenue = parsedData.reduce((acc, curr) => acc + curr.price, 0);
     const uniqueEvents = new Set(parsedData.map(d => d.date + d.eventName)).size;
     const totalPax = parsedData.length;
-    // 講師統計需拆分多個講師的情況
     const instructorCounts = {};
     parsedData.forEach(curr => {
         if(curr.instructor){
@@ -795,17 +649,11 @@ export default function OperationSystem() {
             });
         }
     });
-
     const eventsGrouped = parsedData.reduce((acc, curr) => {
       const rawKey = `${curr.date}_${curr.eventName}_${curr.instructor}`;
       const configKey = rawKey.replace(/[\/\\#\?]/g, '-'); 
       if (!acc[configKey]) {
-        acc[configKey] = { 
-          ...curr, 
-          count: 0, 
-          customers: [], 
-          configKey 
-        };
+        acc[configKey] = { ...curr, count: 0, customers: [], configKey };
       }
       if (curr.customerName !== '開放報名中') {
         acc[configKey].count += 1;
@@ -818,16 +666,11 @@ export default function OperationSystem() {
       }
       return acc;
     }, {});
-
     return { totalRevenue, uniqueEvents, totalPax, instructorCounts, eventsGrouped };
   }, [parsedData]);
 
-  // 取得所有出現過的唯一講師名單
-  const availableInstructors = useMemo(() => {
-      return Object.keys(stats.instructorCounts).sort();
-  }, [stats.instructorCounts]);
+  const availableInstructors = useMemo(() => Object.keys(stats.instructorCounts).sort(), [stats.instructorCounts]);
 
-  // --- 任務中心數據 (Pending Tasks) ---
   const pendingTasksData = useMemo(() => {
     const list = [];
     Object.values(stats.eventsGrouped).forEach(evt => {
@@ -857,7 +700,6 @@ export default function OperationSystem() {
     return parsedData.filter(d => d.customerName === selectedCustomer);
   }, [parsedData, selectedCustomer]);
 
-
   if (loading && !parsedData.length) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50 flex-col space-y-4">
@@ -869,7 +711,6 @@ export default function OperationSystem() {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-800 flex">
-      {/* Sidebar (不變) */}
       <aside className="w-64 bg-white border-r border-slate-200 p-4 flex flex-col hidden md:flex">
         <div className="mb-8 px-4 flex items-center space-x-2">
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xl">S</div>
@@ -883,172 +724,75 @@ export default function OperationSystem() {
           <NavItem id="projects" icon={Briefcase} label="專案進度" activeTab={activeTab} setActiveTab={setActiveTab} />
         </nav>
         <div className="pt-4 border-t border-slate-200">
+          <button onClick={() => setShowDebug(true)} className="w-full flex items-center space-x-2 px-4 py-3 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors text-sm mb-2">
+             <Activity size={16} /> <span>系統連線診斷</span>
+          </button>
           <NavItem id="import" icon={FileText} label="匯入/更新資料" activeTab={activeTab} setActiveTab={setActiveTab} />
         </div>
       </aside>
 
-      {/* Main Content */}
       <main className="flex-1 p-4 md:p-8 overflow-y-auto mt-12 md:mt-0 relative">
-        <div className="md:hidden fixed top-0 left-0 w-full bg-white z-10 border-b p-4 flex justify-between">
-           <h1 className="font-bold flex items-center">SuperOps</h1>
-        </div>
+        <div className="md:hidden fixed top-0 left-0 w-full bg-white z-10 border-b p-4 flex justify-between"><h1 className="font-bold flex items-center">SuperOps</h1></div>
         
-        {/* --- 1. Dashboard --- */}
         {activeTab === 'dashboard' && (
           <div className="space-y-6">
             <header className="mb-6"><h2 className="text-2xl font-bold text-slate-800">營運總覽</h2></header>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-sm font-medium text-slate-500">總營收預估</p>
-                <h3 className="text-3xl font-bold text-slate-800 mt-2">${stats.totalRevenue.toLocaleString()}</h3>
-              </div>
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-sm font-medium text-slate-500">總報名人數</p>
-                <h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.totalPax} 人次</h3>
-              </div>
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                <p className="text-sm font-medium text-slate-500">本月開團數</p>
-                <h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.uniqueEvents} 場</h3>
-              </div>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><p className="text-sm font-medium text-slate-500">總營收預估</p><h3 className="text-3xl font-bold text-slate-800 mt-2">${stats.totalRevenue.toLocaleString()}</h3></div>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><p className="text-sm font-medium text-slate-500">總報名人數</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.totalPax} 人次</h3></div>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100"><p className="text-sm font-medium text-slate-500">本月開團數</p><h3 className="text-3xl font-bold text-slate-800 mt-2">{stats.uniqueEvents} 場</h3></div>
             </div>
           </div>
         )}
 
-        {/* --- 2. Events (Enhanced with Create Button) --- */}
         {activeTab === 'events' && (
           <div className="space-y-6">
             <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-               <div>
-                 <h2 className="text-2xl font-bold text-slate-800">活動場次列表</h2>
-                 <p className="text-slate-500">檢視所有開團資訊與報名詳情</p>
-               </div>
+               <div><h2 className="text-2xl font-bold text-slate-800">活動場次列表</h2><p className="text-slate-500">檢視所有開團資訊與報名詳情</p></div>
                <div className="flex space-x-2">
-                 <button 
-                   onClick={() => setShowCreateEvent(true)}
-                   className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium shadow-sm hover:bg-blue-700 flex items-center transition"
-                 >
-                   <PlusCircle size={16} className="mr-2" />
-                   快速開團
-                 </button>
+                 <button onClick={() => setShowCreateEvent(true)} className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium shadow-sm hover:bg-blue-700 flex items-center transition"><PlusCircle size={16} className="mr-2" />快速開團</button>
                  <div className="flex bg-slate-100 p-1 rounded-lg">
-                   <button 
-                     onClick={() => setEventsViewMode('list')}
-                     className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center ${eventsViewMode === 'list' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                   >
-                     <List size={16} className="mr-2" />
-                     列表
-                   </button>
-                   <button 
-                     onClick={() => setEventsViewMode('calendar')}
-                     className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center ${eventsViewMode === 'calendar' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                   >
-                     <CalendarIcon size={16} className="mr-2" />
-                     月曆
-                   </button>
+                   <button onClick={() => setEventsViewMode('list')} className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center ${eventsViewMode === 'list' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><List size={16} className="mr-2" />列表</button>
+                   <button onClick={() => setEventsViewMode('calendar')} className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center ${eventsViewMode === 'calendar' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><CalendarIcon size={16} className="mr-2" />月曆</button>
                  </div>
                </div>
             </header>
-
-            {/* List View */}
             {eventsViewMode === 'list' && (
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                 <table className="w-full text-left">
-                  <thead className="bg-slate-50 border-b border-slate-200">
-                    <tr>
-                      <th className="px-6 py-4 text-sm font-semibold text-slate-600">日期</th>
-                      <th className="px-6 py-4 text-sm font-semibold text-slate-600">活動名稱</th>
-                      <th className="px-6 py-4 text-sm font-semibold text-slate-600">報名狀況</th>
-                      <th className="px-6 py-4 text-sm font-semibold text-slate-600">操作</th>
-                    </tr>
-                  </thead>
+                  <thead className="bg-slate-50 border-b border-slate-200"><tr><th className="px-6 py-4 text-sm font-semibold text-slate-600">日期</th><th className="px-6 py-4 text-sm font-semibold text-slate-600">活動名稱</th><th className="px-6 py-4 text-sm font-semibold text-slate-600">報名狀況</th><th className="px-6 py-4 text-sm font-semibold text-slate-600">操作</th></tr></thead>
                   <tbody className="divide-y divide-slate-100">
                     {Object.values(stats.eventsGrouped).map((evt, idx) => (
                       <tr key={idx} className="hover:bg-slate-50 transition-colors group">
                         <td className="px-6 py-4 text-sm text-slate-600">{evt.date}</td>
-                        <td className="px-6 py-4">
-                          <span className="font-medium text-slate-800">{evt.eventName}</span>
-                          <div className="text-xs text-slate-400">{evt.instructor}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className="font-bold text-slate-800">{evt.count}</span>
-                          <span className="text-xs text-slate-400"> 人</span>
-                        </td>
-                        <td className="px-6 py-4">
-                            <button className="text-blue-600 font-medium text-sm flex items-center hover:bg-blue-50 px-3 py-1.5 rounded">
-                                <Settings size={14} className="mr-1"/> 管理
-                            </button>
-                        </td>
+                        <td className="px-6 py-4"><span className="font-medium text-slate-800">{evt.eventName}</span><div className="text-xs text-slate-400">{evt.instructor}</div></td>
+                        <td className="px-6 py-4"><span className="font-bold text-slate-800">{evt.count}</span><span className="text-xs text-slate-400"> 人</span></td>
+                        <td className="px-6 py-4"><button className="text-blue-600 font-medium text-sm flex items-center hover:bg-blue-50 px-3 py-1.5 rounded"><Settings size={14} className="mr-1"/> 管理</button></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
-            
-            {/* Calendar View (Placeholder) */}
-            {eventsViewMode === 'calendar' && (
-              <div className="bg-white p-8 text-center text-slate-500 border border-slate-200 rounded-xl">
-                 (月曆視圖代碼保持不變，可切換至列表查看新活動)
-              </div>
-            )}
+            {eventsViewMode === 'calendar' && (<div className="bg-white p-8 text-center text-slate-500 border border-slate-200 rounded-xl">(月曆視圖代碼保持不變，可切換至列表查看新活動)</div>)}
           </div>
         )}
 
-        {/* --- 3. Mission Control (Enhanced) --- */}
         {activeTab === 'tasks' && (
           <div className="h-full flex flex-col">
-            <header className="mb-6 flex justify-between items-center">
-               <div>
-                 <h2 className="text-2xl font-bold text-slate-800">任務指揮中心</h2>
-                 <p className="text-slate-500">智慧追蹤系統，根據活動日期自動計算緊急程度</p>
-               </div>
-               <div className="text-sm font-medium bg-white px-3 py-1 rounded-full border border-slate-200 text-slate-500">
-                  待處理: <span className="text-blue-600 font-bold">{pendingTasksData.length}</span>
-               </div>
-            </header>
-
+            <header className="mb-6 flex justify-between items-center"><div><h2 className="text-2xl font-bold text-slate-800">任務指揮中心</h2><p className="text-slate-500">智慧追蹤系統，根據活動日期自動計算緊急程度</p></div><div className="text-sm font-medium bg-white px-3 py-1 rounded-full border border-slate-200 text-slate-500">待處理: <span className="text-blue-600 font-bold">{pendingTasksData.length}</span></div></header>
             {pendingTasksData.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-center animate-in zoom-in duration-500">
-                <div className="w-24 h-24 bg-yellow-100 text-yellow-500 rounded-full flex items-center justify-center mb-6 shadow-lg animate-bounce">
-                  <PartyPopper size={48} />
-                </div>
-                <h3 className="text-3xl font-bold text-slate-800 mb-2">任務清空！大吉大利！</h3>
-              </div>
+              <div className="flex-1 flex flex-col items-center justify-center text-center animate-in zoom-in duration-500"><div className="w-24 h-24 bg-yellow-100 text-yellow-500 rounded-full flex items-center justify-center mb-6 shadow-lg animate-bounce"><PartyPopper size={48} /></div><h3 className="text-3xl font-bold text-slate-800 mb-2">任務清空！大吉大利！</h3></div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-min">
                  {pendingTasksData.map((task, idx) => (
-                   <div 
-                     key={`${task.configKey}-${task.taskIndex}`} 
-                     onClick={() => setActiveTaskDetail(task)} // 點擊開啟詳情
-                     className={`bg-white p-4 rounded-xl border shadow-sm hover:shadow-md transition-all cursor-pointer relative group ${task.style.bg} ${task.style.border}`}
-                   >
-                     {/* 狀態標籤 */}
-                     {task.style.label && (
-                       <div className={`absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/80 backdrop-blur border ${task.style.color} border-current`}>
-                         {task.style.label}
-                       </div>
-                     )}
-
-                     <div className="flex justify-between items-start mb-3">
-                       <div className="bg-white/60 text-slate-600 text-xs px-2 py-1 rounded font-mono border border-slate-200/50">
-                         {task.eventDate}
-                       </div>
-                     </div>
-                     
-                     <div className="mb-1 text-xs text-slate-500 font-medium">{task.eventName}</div>
-                     <h4 className={`font-bold text-lg mb-4 ${task.style.color}`}>{task.name}</h4>
-                     
+                   <div key={`${task.configKey}-${task.taskIndex}`} onClick={() => setActiveTaskDetail(task)} className={`bg-white p-4 rounded-xl border shadow-sm hover:shadow-md transition-all cursor-pointer relative group ${task.style.bg} ${task.style.border}`}>
+                     {task.style.label && (<div className={`absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/80 backdrop-blur border ${task.style.color} border-current`}>{task.style.label}</div>)}
+                     <div className="flex justify-between items-start mb-3"><div className="bg-white/60 text-slate-600 text-xs px-2 py-1 rounded font-mono border border-slate-200/50">{task.eventDate}</div></div>
+                     <div className="mb-1 text-xs text-slate-500 font-medium">{task.eventName}</div><h4 className={`font-bold text-lg mb-4 ${task.style.color}`}>{task.name}</h4>
                      <div className="flex space-x-2">
-                       <button 
-                         onClick={(e) => { e.stopPropagation(); handleToggleTaskInCenter(task.configKey, task.taskIndex); }}
-                         className="flex-1 py-2 rounded-lg bg-white border border-slate-200 text-slate-400 font-bold hover:bg-green-500 hover:text-white hover:border-green-500 transition-all flex items-center justify-center shadow-sm"
-                       >
-                         <CheckCircle2 size={18} className="mr-2" />
-                         完成
-                       </button>
-                       <button className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-blue-600 hover:border-blue-300 transition-all">
-                         <ChevronRight size={18} />
-                       </button>
+                       <button onClick={(e) => { e.stopPropagation(); handleToggleTaskInCenter(task.configKey, task.taskIndex); }} className="flex-1 py-2 rounded-lg bg-white border border-slate-200 text-slate-400 font-bold hover:bg-green-500 hover:text-white hover:border-green-500 transition-all flex items-center justify-center shadow-sm"><CheckCircle2 size={18} className="mr-2" />完成</button>
+                       <button className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-slate-400 hover:text-blue-600 hover:border-blue-300 transition-all"><ChevronRight size={18} /></button>
                      </div>
                    </div>
                  ))}
@@ -1057,17 +801,8 @@ export default function OperationSystem() {
           </div>
         )}
 
-        {/* --- 4. CRM (Keep existing) --- */}
-        {activeTab === 'crm' && (
-          <div className="space-y-6">
-            <header><h2 className="text-2xl font-bold text-slate-800">客戶關係管理</h2></header>
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-               (CRM 介面保留，支援身分證、生日檢視)
-            </div>
-          </div>
-        )}
+        {activeTab === 'crm' && (<div className="space-y-6"><header><h2 className="text-2xl font-bold text-slate-800">客戶關係管理</h2></header><div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">(CRM 介面保留，支援身分證、生日檢視)</div></div>)}
 
-        {/* --- 6. Import (Keep existing) --- */}
         {activeTab === 'import' && (
           <div className="max-w-3xl mx-auto space-y-6">
             <header><h2 className="text-2xl font-bold text-slate-800">資料批次更新</h2></header>
@@ -1078,29 +813,11 @@ export default function OperationSystem() {
             </div>
           </div>
         )}
-
       </main>
 
-      {/* --- Modals --- */}
-      {showCreateEvent && (
-        <CreateEventModal 
-          onClose={() => setShowCreateEvent(false)} 
-          onSave={handleCreateEvent} 
-          customTemplates={customTemplates}
-          onAddTemplate={handleAddTemplate}
-          onDeleteTemplate={handleDeleteTemplate}
-          availableInstructors={availableInstructors} // 傳入所有可用講師
-        />
-      )}
-
-      {activeTaskDetail && (
-        <TaskDetailModal 
-          task={activeTaskDetail}
-          eventData={activeTaskDetail.fullEventData}
-          onClose={() => setActiveTaskDetail(null)}
-        />
-      )}
-
+      {showCreateEvent && (<CreateEventModal onClose={() => setShowCreateEvent(false)} onSave={handleCreateEvent} customTemplates={customTemplates} onAddTemplate={handleAddTemplate} onDeleteTemplate={handleDeleteTemplate} availableInstructors={availableInstructors} />)}
+      {activeTaskDetail && (<TaskDetailModal task={activeTaskDetail} eventData={activeTaskDetail.fullEventData} onClose={() => setActiveTaskDetail(null)} />)}
+      {showDebug && <DebugPanel onClose={() => setShowDebug(false)} />}
     </div>
   );
 }
