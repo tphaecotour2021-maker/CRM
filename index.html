@@ -90,13 +90,12 @@ const DEFAULT_EVENT_TEMPLATES = [
   { id: 'default_3', name: '課程模板', eventName: '攝影教學', instructor: '陳教練', isSystem: true },
 ];
 
-// --- Firebase 初始化 (使用環境變數以解決權限錯誤) ---
-// 注意：如果您要部署到自己的 Firebase，請將下行改回您的 config，並確保 Firestore Rules 設定為公開 (allow read, write: if true;)
+// --- Firebase 初始化 ---
+// 使用環境變數以避免權限錯誤，若您要部署到自己的環境，請確保 Firestore 規則開放
 const firebaseConfig = JSON.parse(__firebase_config);
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-// 使用環境提供的 appId 以確保路徑權限正確
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // --- Helper Functions ---
