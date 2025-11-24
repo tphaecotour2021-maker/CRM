@@ -127,7 +127,6 @@
             </button>
         );
 
-        // 活動管理 Modal
         const EventManagerModal = ({ event, config, onClose, onSaveConfig }) => {
             const [capacity, setCapacity] = useState(config?.capacity || 20);
             const [tasks, setTasks] = useState(config?.tasks || JSON.parse(JSON.stringify(DEFAULT_TASKS_TEMPLATE)));
@@ -396,8 +395,8 @@
             const [loading, setLoading] = useState(true);
             const [showDebug, setShowDebug] = useState(false);
             const [showCreateEvent, setShowCreateEvent] = useState(false);
-            const [editingEvent, setEditingEvent] = useState(null);
-            const [eventsViewMode, setEventsViewMode] = useState('calendar'); // 預設月曆模式
+            const [editingEvent, setEditingEvent] = useState(null); 
+            const [eventsViewMode, setEventsViewMode] = useState('calendar');
             
             const [csvInput, setCsvInput] = useState('');
             const [parsedData, setParsedData] = useState([]);
@@ -407,7 +406,13 @@
             
             const [activeTaskDetail, setActiveTaskDetail] = useState(null);
             const [selectedCustomer, setSelectedCustomer] = useState('');
-            const [currentDate, setCurrentDate] = useState(new Date()); // 月曆當前月份
+            const [currentDate, setCurrentDate] = useState(new Date());
+
+            // [新增] 新報名表單 State
+            const [newReg, setNewReg] = useState({
+                date: '', eventName: '', instructor: '', customerName: '', 
+                price: '', transport: '', idNo: '', birthday: ''
+            });
 
             useEffect(() => {
                 signInAnonymously(auth).catch(console.error);
@@ -472,6 +477,25 @@
                 } catch(e) {}
                 setCsvInput(newData);
                 await setDoc(doc(db, `artifacts/${appId}/public/data`, 'settings', 'main'), { csvData: newData }, { merge: true });
+            };
+
+            const handleAddManualReg = async () => {
+                if(!newReg.date || !newReg.eventName || !newReg.customerName) {
+                    alert("請填寫必要欄位 (日期, 活動名稱, 客戶姓名)");
+                    return;
+                }
+                // 格式: 日期,活動名稱,講師,客戶姓名,金額,交通方式,身分證字號,生日
+                const newRow = `\n${newReg.date},${newReg.eventName},${newReg.instructor},${newReg.customerName},${newReg.price},${newReg.transport},${newReg.idNo},${newReg.birthday}`;
+                const updatedCSV = csvInput + newRow;
+                
+                await handleSaveCSV(updatedCSV);
+                
+                // Clear form
+                setNewReg({
+                    date: '', eventName: '', instructor: '', customerName: '', 
+                    price: '', transport: '', idNo: '', birthday: ''
+                });
+                alert("新增成功！");
             };
 
             const handleCreateEvent = async ({ dates, eventName, instructors }) => {
@@ -587,7 +611,7 @@
                         {activeTab === 'tasks' && (
                             <div className="max-w-6xl mx-auto fade-in">
                                 <header className="mb-8 flex justify-between items-end">
-                                    <div><h2 className="text-2xl font-bold text-slate-800 mb-1">任務指揮中心</h2><p className="text-slate-500 text-sm">智慧追蹤系統</p></div>
+                                    <div><h2 className="text-2xl font-bold text-slate-800 mb-1">任務指揮中心</h2><p className="text-slate-500 text-sm">智慧追蹤系統，根據活動日期自動排序</p></div>
                                     <div className="bg-white px-4 py-2 rounded-full border text-sm font-medium">待處理: <span className="text-blue-600 font-bold ml-1">{tasks.length}</span></div>
                                 </header>
                                 {tasks.length===0 ? <div className="text-center py-20"><div className="text-6xl mb-4">🎉</div><h3 className="text-xl font-bold text-slate-700">太棒了！任務已清空</h3></div> : 
@@ -704,7 +728,58 @@
 
                         {activeTab === 'dashboard' && <div className="fade-in max-w-6xl mx-auto space-y-6"><h2 className="text-2xl font-bold">數據總覽</h2><div className="grid grid-cols-3 gap-6"><div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100"><div className="text-sm text-slate-500">總營收</div><div className="text-3xl font-bold">${stats.totalRev.toLocaleString()}</div></div><div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100"><div className="text-sm text-slate-500">總人次</div><div className="text-3xl font-bold">{stats.totalPax}</div></div><div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100"><div className="text-sm text-slate-500">場次</div><div className="text-3xl font-bold">{Object.keys(stats.events).length}</div></div></div></div>}
                         {activeTab === 'crm' && <div className="fade-in max-w-6xl mx-auto"><h2 className="text-2xl font-bold mb-6">客戶 CRM</h2><div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200"><select className="w-full p-3 border rounded-xl mb-6" value={selectedCustomer} onChange={e=>setSelectedCustomer(e.target.value)}><option value="">搜尋客戶...</option>{uniqueCustomers.map(c=><option key={c} value={c}>{c}</option>)}</select>{selectedCustomer && <div><div className="text-xl font-bold mb-4">{selectedCustomer}</div><div className="space-y-2">{customerHistory.map((h,i)=><div key={i} className="flex justify-between p-3 border rounded-lg bg-slate-50"><span>{h.date} {h.eventName}</span><span>${h.price}</span></div>)}</div></div>}</div></div>}
-                        {activeTab === 'import' && <div className="fade-in max-w-4xl mx-auto"><h2 className="text-2xl font-bold mb-6">資料庫管理</h2><div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200"><textarea className="w-full h-64 p-4 font-mono text-sm border rounded-xl mb-4" value={csvInput} onChange={e=>setCsvInput(e.target.value)}/><div className="flex justify-end"><button onClick={()=>handleSaveCSV(csvInput)} className="bg-slate-800 text-white px-6 py-2 rounded-xl flex items-center gap-2">{isSaving?<Icon name="loader-2" className="animate-spin"/>:<Icon name="save"/>} 儲存</button></div></div></div>}
+                        {activeTab === 'import' && (
+                            <div className="fade-in max-w-4xl mx-auto space-y-8">
+                                {/* New Registration Form */}
+                                <section>
+                                    <h2 className="text-2xl font-bold mb-6">新增報名資料</h2>
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div><label className="block text-xs font-bold text-slate-500 mb-1">日期 *</label><input type="date" className="w-full p-2 border rounded-lg" value={newReg.date} onChange={e=>setNewReg({...newReg, date: e.target.value})} /></div>
+                                            <div><label className="block text-xs font-bold text-slate-500 mb-1">活動名稱 *</label><input type="text" className="w-full p-2 border rounded-lg" placeholder="例如: 登山團" value={newReg.eventName} onChange={e=>setNewReg({...newReg, eventName: e.target.value})} /></div>
+                                            <div><label className="block text-xs font-bold text-slate-500 mb-1">講師</label><input type="text" className="w-full p-2 border rounded-lg" placeholder="講師姓名" value={newReg.instructor} onChange={e=>setNewReg({...newReg, instructor: e.target.value})} /></div>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div><label className="block text-xs font-bold text-slate-500 mb-1">客戶姓名 *</label><input type="text" className="w-full p-2 border rounded-lg" placeholder="王小明" value={newReg.customerName} onChange={e=>setNewReg({...newReg, customerName: e.target.value})} /></div>
+                                            <div><label className="block text-xs font-bold text-slate-500 mb-1">金額</label><input type="number" className="w-full p-2 border rounded-lg" placeholder="3000" value={newReg.price} onChange={e=>setNewReg({...newReg, price: e.target.value})} /></div>
+                                            <div><label className="block text-xs font-bold text-slate-500 mb-1">交通方式</label>
+                                                <select className="w-full p-2 border rounded-lg" value={newReg.transport} onChange={e=>setNewReg({...newReg, transport: e.target.value})}>
+                                                    <option value="">未定</option>
+                                                    <option value="共乘">共乘</option>
+                                                    <option value="自行前往">自行前往</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div><label className="block text-xs font-bold text-slate-500 mb-1">身分證字號</label><input type="text" className="w-full p-2 border rounded-lg" placeholder="A123456789" value={newReg.idNo} onChange={e=>setNewReg({...newReg, idNo: e.target.value})} /></div>
+                                            <div><label className="block text-xs font-bold text-slate-500 mb-1">生日</label><input type="date" className="w-full p-2 border rounded-lg" value={newReg.birthday} onChange={e=>setNewReg({...newReg, birthday: e.target.value})} /></div>
+                                        </div>
+                                        <div className="flex justify-end pt-2">
+                                            <button onClick={handleAddManualReg} disabled={isSaving} className="bg-blue-600 text-white px-6 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors">
+                                                {isSaving ? <Icon name="loader-2" className="animate-spin"/> : <Icon name="plus"/>}
+                                                新增一筆報名
+                                            </button>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                {/* Raw CSV Edit */}
+                                <section>
+                                    <h2 className="text-xl font-bold mb-4 text-slate-700">進階：原始資料編輯 (CSV)</h2>
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                                    <label className="block text-sm font-medium text-slate-700 mb-3">CSV 原始數據</label>
+                                    <textarea className="w-full h-64 p-4 font-mono text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none" value={csvInput} onChange={e=>setCsvInput(e.target.value)} placeholder="請在此貼上您的數據..." />
+                                    <div className="mt-4 flex justify-between items-center">
+                                        <div className="text-sm text-slate-500 flex items-center gap-1"><Icon name="alert-circle" size={16} /> 修改原始資料請謹慎</div>
+                                        <button onClick={() => handleSaveCSV(csvInput)} disabled={isSaving} className="bg-slate-800 text-white px-6 py-2 rounded-xl flex items-center gap-2 hover:bg-slate-900">
+                                            {isSaving ? <Icon name="loader-2" className="animate-spin"/> : <Icon name="save"/>}
+                                            <span>儲存變更</span>
+                                        </button>
+                                    </div>
+                                    </div>
+                                </section>
+                            </div>
+                        )}
 
                     </main>
 
