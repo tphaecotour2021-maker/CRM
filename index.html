@@ -18,6 +18,7 @@
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .glass-nav { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border-bottom: 1px solid rgba(226, 232, 240, 0.8); }
     </style>
 </head>
 <body>
@@ -29,39 +30,6 @@
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
         import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
         import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, addDoc, updateDoc, deleteDoc, writeBatch } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-
-        // --- [工具函式] 強力 CSV 處理 ---
-        const toCSVField = (val) => {
-            const str = String(val !== undefined && val !== null ? val : '');
-            if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-                return `"${str.replace(/"/g, '""')}"`;
-            }
-            return str;
-        };
-
-        const parseCSVLine = (text) => {
-            const result = [];
-            let start = 0;
-            let inQuotes = false;
-            for (let i = 0; i < text.length; i++) {
-                if (text[i] === '"') {
-                    inQuotes = !inQuotes;
-                } else if (text[i] === ',' && !inQuotes) {
-                    let field = text.substring(start, i);
-                    if (field.startsWith('"') && field.endsWith('"')) {
-                        field = field.substring(1, field.length - 1).replace(/""/g, '"');
-                    }
-                    result.push(field.trim());
-                    start = i + 1;
-                }
-            }
-            let lastField = text.substring(start);
-            if (lastField.startsWith('"') && lastField.endsWith('"')) {
-                lastField = lastField.substring(1, lastField.length - 1).replace(/""/g, '"');
-            }
-            result.push(lastField.trim());
-            return result;
-        };
 
         const Logo = ({ className }) => {
             const [imgError, setImgError] = useState(false);
@@ -109,8 +77,10 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
+        
+        const appId = 'crm-system-v1';
 
-        // --- 預設資料 (還原您的真實資料) ---
+        // --- 預設資料 ---
         const CSV_HEADER = "日期,活動名稱,講師,客戶姓名,金額,交通方式,身分證字號,生日,Email,報名管道,社群暱稱,備註,訂購日,手機,報到狀態";
         const INITIAL_CSV_DATA = `${CSV_HEADER}
 2026-01-11,陽明兔,,張曉娟,750,,F227249054,1988-12-25,reina249@hotmail.com,IG廣告,,“早鳥票；訂單編號：RZ251127YP9852；付款方式：藍新金流信用卡”,2025-11-27,0988112667,0`;
@@ -138,6 +108,16 @@
             const target = new Date(targetDateStr);
             const diffTime = target.getTime() - today.getTime();
             return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        };
+
+        // 新增 CSV 欄位處理 helper
+        const toCSVField = (text) => {
+            if (!text) return '';
+            const str = String(text);
+            if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                return `"${str.replace(/"/g, '""')}"`;
+            }
+            return str;
         };
 
         const getTaskStatusStyle = (taskType, eventDateStr) => {
@@ -199,128 +179,64 @@
             </button>
         );
 
-        const AddPromiseModal = ({ onClose, onSave }) => {
-            const [form, setForm] = useState({ content: '', who: '', date: new Date().toISOString().split('T')[0], time: '12:00' });
-            return (
-                <div className="fixed inset-0 bg-black/50 z-[80] flex items-center justify-center p-4 fade-in backdrop-blur-sm"><div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl"><div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="message-square" className="text-purple-500"/> 新增承諾</h3><button onClick={onClose}><Icon name="x" className="text-slate-400 hover:text-slate-600"/></button></div><div className="space-y-4"><div><label className="block text-xs font-bold text-slate-500 mb-1">內容</label><textarea className="w-full p-3 border rounded-xl resize-none h-24" value={form.content} onChange={e=>setForm({...form, content: e.target.value})}></textarea></div><div><label className="block text-xs font-bold text-slate-500 mb-1">對象</label><input type="text" className="w-full p-3 border rounded-xl" value={form.who} onChange={e=>setForm({...form, who: e.target.value})} /></div><div className="grid grid-cols-2 gap-3"><input type="date" className="w-full p-3 border rounded-xl" value={form.date} onChange={e=>setForm({...form, date: e.target.value })} /><input type="time" className="w-full p-3 border rounded-xl" value={form.time} onChange={e=>setForm({...form, time: e.target.value })} /></div><button onClick={()=>{if(!form.content)return;onSave(form)}} className="w-full py-3 bg-purple-600 text-white rounded-xl font-bold shadow-lg shadow-purple-200 mt-2">建立</button></div></div></div>
-            );
-        };
+        // [修改] 移除預設密碼提示
+        const LoginModal = ({ onClose, onLogin }) => {
+            const [password, setPassword] = useState('');
+            const [error, setError] = useState(false);
 
-        const InstructorScheduleModal = ({ date, availableInstructors, restingList, onClose, onToggle }) => {
-            return (
-                <div className="fixed inset-0 bg-black/50 z-[90] flex items-center justify-center p-4 fade-in backdrop-blur-sm"><div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl"><div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Icon name="calendar-days" className="text-blue-600"/> {date} 排班</h3><button onClick={onClose}><Icon name="x" className="text-slate-400"/></button></div><p className="text-xs text-slate-500 mb-4">點擊切換上工狀態 (🔴 休假 / 🟢 可上工)</p><div className="space-y-2 max-h-60 overflow-y-auto">{availableInstructors.map(name => { const isResting = restingList.includes(name); return (<div key={name} onClick={() => onToggle(date, name)} className={`flex justify-between items-center p-3 rounded-xl border cursor-pointer transition-all ${isResting ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}><span className={`font-bold ${isResting ? 'text-red-700' : 'text-green-700'}`}>{name}</span><span className={`text-xs px-2 py-1 rounded-full font-bold ${isResting ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>{isResting ? '休假' : '可上工'}</span></div>); })} {availableInstructors.length === 0 && <div className="text-center text-slate-400 py-4">暫無講師資料，請先建立活動或手動輸入。</div>}</div><div className="mt-4 pt-4 border-t flex justify-end"><button onClick={onClose} className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm">完成</button></div></div></div>
-            );
-        };
-
-        const EventManagerModal = ({ event, config, onClose, onSaveConfig, availableInstructors, instructorSchedule, onCheckInToggle }) => {
-            const [capacity, setCapacity] = useState(config?.capacity || 20);
-            const [eventNote, setEventNote] = useState(config?.note || '');
-            // [新增] 讀取並初始化活動時間
-            const [eventTime, setEventTime] = useState(config?.time || '');
-            const [tasks, setTasks] = useState(config?.tasks || JSON.parse(JSON.stringify(DEFAULT_TASKS_TEMPLATE)));
-            const [instructors, setInstructors] = useState(event.instructor ? event.instructor.split(/[&,]/).map(s=>s.trim()) : []);
-            const [tempInstructor, setTempInstructor] = useState('');
-
-            const sortedCustomers = useMemo(() => {
-                if (!event.customers) return [];
-                return [...event.customers].sort((a, b) => {
-                    if (a.transport === '共乘' && b.transport !== '共乘') return -1;
-                    if (a.transport !== '共乘' && b.transport === '共乘') return 1;
-                    return 0;
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onLogin(password, (isSuccess) => {
+                    if (!isSuccess) setError(true);
                 });
-            }, [event.customers]);
-            const carpoolCount = event.customers ? event.customers.filter(c => c.transport === '共乘').length : 0;
-            const checkedInCount = event.customers ? event.customers.filter(c => c.isCheckedIn).length : 0;
-
-            const handleTaskToggle = (index) => { const newTasks = [...tasks]; newTasks[index].completed = !newTasks[index].completed; setTasks(newTasks); };
-            const handleAddTask = () => { const name = prompt("任務名稱:"); if(name) setTasks([...tasks, { id: `custom_${Date.now()}`, name, fields: [], completed: false }]); };
-            const handleDeleteTask = (index) => { if(confirm("刪除?")) { const n=[...tasks]; n.splice(index,1); setTasks(n); } };
-            
-            const addInstructor = (name) => { 
-                const clean = name.trim(); 
-                if(!clean) return;
-                const isResting = instructorSchedule[event.date] && instructorSchedule[event.date].includes(clean);
-                if (isResting) { if(!confirm(`${clean} 在 ${event.date} 已排休，確定要排入嗎？`)) return; }
-                if (!instructors.includes(clean)) setInstructors([...instructors, clean]); 
-                setTempInstructor(''); 
             };
-            const removeInstructor = (name) => { setInstructors(instructors.filter(i => i !== name)); };
-            
-            const handleSave = () => { 
-                const newInstructorStr = instructors.join(' & ');
-                // [修改] 儲存時包含 time
-                onSaveConfig({ capacity: parseInt(capacity), tasks, note: eventNote, time: eventTime }, newInstructorStr); 
-                onClose(); 
-            };
-            const progress = Math.round((tasks.filter(t => t.completed).length / Math.max(tasks.length, 1)) * 100);
 
             return (
-                <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 fade-in backdrop-blur-sm"><div className="bg-white rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh] shadow-2xl"><div className="p-6 border-b border-slate-100 flex justify-between items-center"><div><div className="text-xs text-blue-600 font-bold bg-blue-50 px-2 py-1 rounded mb-1 inline-block">{event.date}</div><h3 className="text-xl font-bold text-slate-800">{event.eventName}</h3></div><button onClick={onClose}><Icon name="x" className="text-slate-400 hover:text-slate-600"/></button></div><div className="p-6 overflow-y-auto space-y-6"><section><h4 className="font-bold text-slate-700 mb-2 flex items-center"><Icon name="user" size={18} className="mr-2"/> 帶團講師</h4><div className="bg-slate-50 p-3 rounded-xl border border-slate-200"><div className="flex flex-wrap gap-2 mb-2">{instructors.map(ins=><div key={ins} className="flex items-center bg-white text-blue-700 px-2 py-1 rounded-md text-sm border border-blue-100 shadow-sm"><span className="mr-1">{ins}</span><button onClick={()=>removeInstructor(ins)}><Icon name="x" size={14} className="text-slate-400 hover:text-red-500"/></button></div>)}{instructors.length===0 && <span className="text-xs text-slate-400 py-1">未指定講師</span>}</div><div className="flex gap-2 mb-2"><input type="text" className="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" value={tempInstructor} onChange={e=>setTempInstructor(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addInstructor(tempInstructor)} placeholder="輸入名字..."/><button onClick={()=>addInstructor(tempInstructor)} className="px-3 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200"><Icon name="plus" size={16}/></button></div><div className="flex flex-wrap gap-2">{availableInstructors.slice(0,5).map(i=><button key={i} onClick={()=>addInstructor(i)} className="text-xs px-2 py-1 bg-white border rounded-full hover:bg-blue-50 text-slate-600">+ {i}</button>)}</div></div></section>
-                
-                <section>
-                    <div className="flex justify-between items-center mb-3">
-                        <h4 className="font-bold text-slate-700 flex items-center"><Icon name="users" size={18} className="mr-2"/> 報名名單 ({checkedInCount}/{event.count})</h4>
-                        <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-full">共乘需求: {carpoolCount} 人</span>
-                    </div>
-                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 max-h-60 overflow-y-auto">
-                        {sortedCustomers.length > 0 ? (
-                            <ul className="space-y-2">
-                                {sortedCustomers.map((c, i) => (
-                                    <li key={i} className={`flex justify-between items-center text-sm p-2 rounded-lg ${c.transport === '共乘' ? 'bg-white border border-orange-100 shadow-sm' : 'border-b border-slate-100'}`}>
-                                        <div className="flex items-center gap-3">
-                                            {/* 報到 Checkbox */}
-                                            <button onClick={(e)=>{e.stopPropagation(); onCheckInToggle(c.id, c.isCheckedIn);}} className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${c.isCheckedIn ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-slate-300 text-transparent hover:border-blue-400'}`}>
-                                                <Icon name="check" size={14} />
-                                            </button>
-                                            <div className="flex flex-col">
-                                                <span className={`font-medium ${c.isCheckedIn ? 'text-green-700' : 'text-slate-700'}`}>{c.customerName}</span>
-                                                {c.transport === '共乘' && <span className="text-[10px] text-orange-500 flex items-center"><Icon name="car" size={10} className="mr-0.5"/> 共乘</span>}
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-xs text-slate-400">{c.source || '-'}</span>
-                                            {c.isCheckedIn && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded">已報到</span>}
-                                        </div>
-                                    </li>
-                                ))}
-                            </ul>
-                        ) : <div className="text-slate-400 text-center text-sm py-2">目前尚無報名</div>}
-                    </div>
-                </section>
-                
-                <section>
-                    <h4 className="font-bold text-slate-700 mb-3 flex items-center"><Icon name="settings" size={18} className="mr-2"/> 活動設定</h4>
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
-                        {/* [修改] 新增活動時間設定欄位 */}
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <span className="text-slate-500 text-xs font-bold mb-1 block">活動時間</span>
-                                <input type="time" value={eventTime} onChange={e=>setEventTime(e.target.value)} className="w-full px-2 py-1.5 text-center border border-slate-300 rounded-lg font-bold outline-none focus:ring-2 focus:ring-blue-500 bg-white"/>
+                <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 fade-in backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl w-full max-w-sm p-8 shadow-2xl">
+                        <div className="flex flex-col items-center mb-6">
+                            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 mb-3">
+                                <Icon name="lock" size={24} />
                             </div>
+                            <h3 className="text-xl font-bold text-slate-800">管理員登入</h3>
+                            <p className="text-sm text-slate-500">請輸入密碼以存取後台</p>
+                        </div>
+                        <form onSubmit={handleSubmit} className="space-y-4">
                             <div>
-                                <span className="text-slate-500 text-xs font-bold mb-1 block">人數上限</span>
-                                <input type="number" value={capacity} onChange={e=>setCapacity(e.target.value)} className="w-full px-2 py-1.5 text-center border border-slate-300 rounded-lg font-bold outline-none focus:ring-2 focus:ring-blue-500 bg-white"/>
+                                <input 
+                                    type="password" 
+                                    className={`w-full p-3 border rounded-xl outline-none transition-all text-center tracking-widest font-bold text-lg ${error ? 'border-red-500 bg-red-50' : 'border-slate-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200'}`}
+                                    placeholder="輸入密碼"
+                                    value={password}
+                                    onChange={e => { setPassword(e.target.value); setError(false); }}
+                                    autoFocus
+                                />
+                                {error && <p className="text-red-500 text-xs text-center mt-2">密碼錯誤，請重試</p>}
                             </div>
-                        </div>
-                        <div>
-                            <label className="text-xs font-bold text-slate-500 mb-1 block">活動專屬備註</label>
-                            <textarea className="w-full p-2 border border-slate-300 rounded-lg text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 outline-none" placeholder="例如: 記得帶無線電..." value={eventNote} onChange={e=>setEventNote(e.target.value)}></textarea>
-                        </div>
+                            <div className="flex gap-2">
+                                <button type="button" onClick={onClose} className="flex-1 py-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">取消</button>
+                                <button type="submit" className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-bold shadow-md transition-colors">登入</button>
+                            </div>
+                        </form>
                     </div>
-                </section>
-                <section><div className="flex justify-between items-center mb-2"><h4 className="font-bold text-slate-700 flex items-center"><Icon name="check-square" size={18} className="mr-2"/> 執行任務</h4><button onClick={handleAddTask} className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 flex items-center"><Icon name="plus" size={14} className="mr-1"/> 新增</button></div><div className="w-full h-1.5 bg-slate-100 rounded-full mb-4 overflow-hidden"><div className="h-full bg-green-500 transition-all duration-500" style={{width: `${progress}%`}}></div></div><div className="space-y-2">{tasks.map((t, i) => (<div key={i} className="flex items-center justify-between p-2.5 border border-slate-200 rounded-lg hover:bg-slate-50 group"><div className="flex items-center gap-3 cursor-pointer" onClick={()=>handleTaskToggle(i)}><div className={`w-4 h-4 rounded border flex items-center justify-center ${t.completed ? 'bg-green-500 border-green-500 text-white' : 'border-slate-300'}`}>{t.completed && <Icon name="check" size={12}/>}</div><span className={`text-sm ${t.completed ? 'text-slate-400 line-through' : 'text-slate-700 font-medium'}`}>{t.name}</span></div><button onClick={()=>handleDeleteTask(i)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Icon name="trash-2" size={14}/></button></div>))}</div></section></div><div className="p-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl flex justify-end gap-2"><button onClick={onClose} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg">取消</button><button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-md">儲存設定</button></div></div></div>);
+                </div>
+            );
         };
-        
-        const CreateEventModal = ({ onClose, onSave, customTemplates, onSaveTemplate, onDeleteTemplate, availableInstructors, instructorSchedule }) => { /* ...same... */ const [mode, setMode] = useState('template'); const [isCreatingTemplate, setIsCreatingTemplate] = useState(false); const [calendarMonth, setCalendarMonth] = useState(new Date()); const [formData, setFormData] = useState({ dates: [], eventName: '', instructors: [] }); const [tempInstructor, setTempInstructor] = useState(''); const [newTemplateData, setNewTemplateData] = useState({ id: null, name: '', eventName: '', instructor: '' }); const unavailableInstructors = useMemo(() => { const unavailable = new Set(); formData.dates.forEach(date => { const resting = instructorSchedule[date] || []; resting.forEach(name => unavailable.add(name)); }); return unavailable; }, [formData.dates, instructorSchedule]); const handleTemplateSelect = (tpl) => { let tplInstructors = []; if (tpl.instructor) tplInstructors = tpl.instructor.split(/[&,]/).map(s => s.trim()); setFormData({ ...formData, eventName: tpl.eventName, instructors: tplInstructors }); }; const handleEditTemplate = (e, tpl) => { e.stopPropagation(); setNewTemplateData({ id: tpl.id, name: tpl.name, eventName: tpl.eventName, instructor: tpl.instructor }); setIsCreatingTemplate(true); }; const toggleDate = (year, month, day) => { const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`; let newDates = formData.dates.includes(dateStr) ? formData.dates.filter(d => d !== dateStr) : [...formData.dates, dateStr].sort(); setFormData({ ...formData, dates: newDates }); }; const addInstructor = (name) => { const clean = name.trim(); const isResting = formData.dates.some(d => instructorSchedule[d] && instructorSchedule[d].includes(clean)); if (isResting) { if(!confirm(`${clean} 在部分選定的日期已排休，確定要排入嗎？`)) return; } if (clean && !formData.instructors.includes(clean)) setFormData({ ...formData, instructors: [...formData.instructors, clean] }); setTempInstructor(''); }; const removeInstructor = (name) => { setFormData({ ...formData, instructors: formData.instructors.filter(i => i !== name) }); }; const handleSubmitEvent = () => { if (formData.dates.length === 0) { alert("請至少選擇一個日期"); return; } onSave(formData); }; const handleSaveNewTemplate = () => { if (!newTemplateData.name) { alert("請輸入模板名稱"); return; } onSaveTemplate(newTemplateData); setIsCreatingTemplate(false); setNewTemplateData({ id: null, name: '', eventName: '', instructor: '' }); }; const renderCalendar = () => { const year = calendarMonth.getFullYear(); const month = calendarMonth.getMonth(); const daysInMonth = getDaysInMonth(year, month); const firstDay = getFirstDayOfMonth(year, month); const days = Array(firstDay).fill(null).concat([...Array(daysInMonth).keys()].map(i => i + 1)); return ( <div className="bg-slate-50 p-4 rounded-xl border border-slate-200"> <div className="flex justify-between items-center mb-4"> <button onClick={() => setCalendarMonth(new Date(year, month - 1))}><Icon name="chevron-left" size={20}/></button> <span className="font-bold text-slate-700">{year}年 {month + 1}月</span> <button onClick={() => setCalendarMonth(new Date(year, month + 1))}><Icon name="chevron-right" size={20}/></button> </div> <div className="grid grid-cols-7 text-center mb-2 text-xs font-bold text-slate-400">{['日','一','二','三','四','五','六'].map(d=><div key={d}>{d}</div>)}</div> <div className="grid grid-cols-7 gap-1"> {days.map((day, i) => ( <div key={i} className="aspect-square flex items-center justify-center"> {day && (<button onClick={() => toggleDate(year, month, day)} className={`w-8 h-8 rounded-full text-sm transition-all ${formData.dates.includes(`${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`) ? 'bg-blue-600 text-white shadow-md' : 'hover:bg-blue-100 text-slate-600'}`}>{day}</button>)} </div> ))} </div> </div> ); }; return ( <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 fade-in backdrop-blur-sm"> <div className="bg-white rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh] shadow-2xl"> <div className="p-6 border-b border-slate-100 flex justify-between items-center"><h3 className="text-xl font-bold flex items-center gap-2"><Icon name="zap" className="text-yellow-500"/> 快速開團</h3><button onClick={onClose}><Icon name="x" className="text-slate-400"/></button></div> <div className="p-6 overflow-y-auto space-y-6"> {!isCreatingTemplate ? ( <> <div className="flex bg-slate-100 p-1 rounded-lg"><button onClick={()=>setMode('template')} className={`flex-1 py-1.5 text-sm rounded-md transition-all ${mode==='template'?'bg-white shadow text-blue-600':'text-slate-500'}`}>使用模板</button><button onClick={()=>setMode('custom')} className={`flex-1 py-1.5 text-sm rounded-md transition-all ${mode==='custom'?'bg-white shadow text-blue-600':'text-slate-500'}`}>完全自訂</button></div> {mode === 'template' && ( <div className="grid grid-cols-3 gap-3"> {[...DEFAULT_EVENT_TEMPLATES, ...customTemplates].map((tpl, i) => ( <div key={i} onClick={()=>handleTemplateSelect(tpl)} className={`relative border rounded-xl p-3 cursor-pointer text-center hover:bg-blue-50 transition-all group ${formData.eventName===tpl.eventName?'border-blue-500 ring-1 ring-blue-500 bg-blue-50':'border-slate-200'}`}> <div className="font-bold text-slate-700 text-sm mb-1">{tpl.name}</div><div className="text-xs text-slate-500">{tpl.instructor}</div> {!tpl.isSystem && <button onClick={(e)=>handleEditTemplate(e, tpl)} className="absolute top-1 right-1 p-1 bg-white rounded-full shadow-sm text-slate-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition"><Icon name="edit-2" size={12}/></button>} </div> ))} <button onClick={()=>setIsCreatingTemplate(true)} className="border border-dashed border-slate-300 rounded-xl p-3 flex flex-col items-center justify-center text-slate-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-all"><Icon name="plus-circle" className="mb-1"/><span className="text-xs">新增模板</span></button> </div> )} <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-100"> <div><label className="block text-sm font-medium text-slate-700 mb-2">1. 選擇日期 (多選)</label>{renderCalendar()}</div> <div className="space-y-4"> <div><label className="block text-sm font-medium text-slate-700 mb-1">2. 活動名稱</label><input type="text" className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" value={formData.eventName} onChange={e=>setFormData({...formData, eventName: e.target.value})} placeholder="輸入名稱..."/></div> <div> <label className="block text-sm font-medium text-slate-700 mb-1">3. 帶團講師</label> <div className="flex flex-wrap gap-2 mb-2 min-h-[38px] p-2 bg-white border border-slate-200 rounded-lg">{formData.instructors.map(ins=><div key={ins} className="flex items-center bg-blue-50 text-blue-700 px-2 py-1 rounded text-sm"><span className="mr-1">{ins}</span><button onClick={()=>setFormData({...formData, instructors: formData.instructors.filter(i=>i!==ins)})}><Icon name="x" size={14}/></button></div>)}</div> <div className="flex gap-2"><input type="text" className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" value={tempInstructor} onChange={e=>setTempInstructor(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addInstructor(tempInstructor)} placeholder="輸入名字..."/><button onClick={()=>addInstructor(tempInstructor)} className="px-3 bg-slate-100 rounded-lg hover:bg-slate-200"><Icon name="plus" size={18}/></button></div> <div className="flex flex-wrap gap-2 mt-2">{availableInstructors.slice(0,6).map(i=><button key={i} onClick={()=>addInstructor(i)} className={`text-xs px-2 py-1 border rounded-full transition ${unavailableInstructors.has(i)?'bg-slate-100 text-slate-400 border-slate-200':'bg-slate-50 hover:bg-blue-50 text-slate-600'}`}>+ {i}</button>)}</div> </div> </div> </div> </> ) : ( <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3"> <div className="flex justify-between"><h4 className="font-bold">{newTemplateData.id ? '編輯模板' : '建立新模板'}</h4><button onClick={()=>{setIsCreatingTemplate(false);setNewTemplateData({id:null,name:'',eventName:'',instructor:''})}} className="text-sm text-slate-500">取消</button></div> <input type="text" className="w-full px-3 py-2 text-sm border rounded-lg" placeholder="模板名稱 (如: 豪華團)" value={newTemplateData.name} onChange={e=>setNewTemplateData({...newTemplateData, name: e.target.value})}/> <div className="grid grid-cols-2 gap-3"> <input type="text" className="w-full px-3 py-2 text-sm border rounded-lg" placeholder="預設活動名稱" value={newTemplateData.eventName} onChange={e=>setNewTemplateData({...newTemplateData, eventName: e.target.value})}/> <input type="text" className="w-full px-3 py-2 text-sm border rounded-lg" placeholder="預設講師" value={newTemplateData.instructor} onChange={e=>setNewTemplateData({...newTemplateData, instructor: e.target.value})}/> </div> <div className="flex gap-2">{newTemplateData.id && <button onClick={()=>{if(confirm("確定刪除?")){onDeleteTemplate(newTemplateData.id);setIsCreatingTemplate(false);setNewTemplateData({id:null,name:'',eventName:'',instructor:''})}}} className="flex-1 py-2 bg-red-100 text-red-600 rounded-lg text-sm">刪除</button>}<button onClick={handleSaveNewTemplate} className="flex-[2] py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">儲存模板</button></div> </div> )} </div> {!isCreatingTemplate && <div className="p-4 border-t border-slate-100 flex justify-end items-center gap-4 bg-slate-50/50 rounded-b-2xl"><span className="text-xs text-slate-500">將建立 {formData.dates.length} 場活動</span><button onClick={()=>onSave(formData)} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-md">批量建立</button></div>} </div> </div> ); };
 
-        const TaskDetailModal = ({ task, eventData, onClose }) => { /* ... */ return <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 fade-in backdrop-blur-sm"><div className="bg-white rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh] shadow-2xl"><div className="p-6 border-b flex justify-between items-center"><div><div className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded inline-block mb-1">{eventData.date}</div><h3 className="text-xl font-bold">{task.name}</h3></div><button onClick={onClose}><Icon name="x"/></button></div><div className="p-6 overflow-y-auto"><div className="text-center text-slate-500 py-8">任務內容</div></div></div></div>; };
+        const AddPromiseModal = ({ onClose, onSave }) => { const [form, setForm] = useState({ content: '', who: '', date: new Date().toISOString().split('T')[0], time: '12:00' }); return (<div className="fixed inset-0 bg-black/50 z-[80] flex items-center justify-center p-4 fade-in backdrop-blur-sm"><div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl"><div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold text-slate-800 flex items-center gap-2"><Icon name="message-square" className="text-purple-500"/> 新增承諾</h3><button onClick={onClose}><Icon name="x" className="text-slate-400 hover:text-slate-600"/></button></div><div className="space-y-4"><div><label className="block text-xs font-bold text-slate-500 mb-1">內容</label><textarea className="w-full p-3 border rounded-xl resize-none h-24" value={form.content} onChange={e=>setForm({...form, content: e.target.value})}></textarea></div><div><label className="block text-xs font-bold text-slate-500 mb-1">對象</label><input type="text" className="w-full p-3 border rounded-xl" value={form.who} onChange={e=>setForm({...form, who: e.target.value})} /></div><div className="grid grid-cols-2 gap-3"><input type="date" className="w-full p-3 border rounded-xl" value={form.date} onChange={e=>setForm({...form, date: e.target.value })} /><input type="time" className="w-full p-3 border rounded-xl" value={form.time} onChange={e=>setForm({...form, time: e.target.value })} /></div><button onClick={()=>{if(!form.content)return;onSave(form)}} className="w-full py-3 bg-purple-600 text-white rounded-xl font-bold shadow-lg shadow-purple-200 mt-2">建立</button></div></div></div>); };
+        const InstructorScheduleModal = ({ date, availableInstructors, restingList, onClose, onToggle }) => { return (<div className="fixed inset-0 bg-black/50 z-[90] flex items-center justify-center p-4 fade-in backdrop-blur-sm"><div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl"><div className="flex justify-between items-center mb-4"><h3 className="text-lg font-bold text-slate-800 flex items-center gap-2"><Icon name="calendar-days" className="text-blue-600"/> {date} 排班</h3><button onClick={onClose}><Icon name="x" className="text-slate-400"/></button></div><p className="text-xs text-slate-500 mb-4">點擊切換上工狀態 (🔴 休假 / 🟢 可上工)</p><div className="space-y-2 max-h-60 overflow-y-auto">{availableInstructors.map(name => { const isResting = restingList.includes(name); return (<div key={name} onClick={() => onToggle(date, name)} className={`flex justify-between items-center p-3 rounded-xl border cursor-pointer transition-all ${isResting ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}><span className={`font-bold ${isResting ? 'text-red-700' : 'text-green-700'}`}>{name}</span><span className={`text-xs px-2 py-1 rounded-full font-bold ${isResting ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>{isResting ? '休假' : '可上工'}</span></div>); })} {availableInstructors.length === 0 && <div className="text-center text-slate-400 py-4">暫無講師資料，請先建立活動或手動輸入。</div>}</div><div className="mt-4 pt-4 border-t flex justify-end"><button onClick={onClose} className="bg-slate-800 text-white px-4 py-2 rounded-lg text-sm">完成</button></div></div></div>); };
+        const EventManagerModal = ({ event, config, onClose, onSaveConfig, availableInstructors, instructorSchedule, onCheckInToggle }) => { const [capacity, setCapacity] = useState(config?.capacity || 20); const [eventNote, setEventNote] = useState(config?.note || ''); const [eventTime, setEventTime] = useState(config?.time || ''); const [eventLink, setEventLink] = useState(config?.link || ''); const [tasks, setTasks] = useState(config?.tasks || JSON.parse(JSON.stringify(DEFAULT_TASKS_TEMPLATE))); const [instructors, setInstructors] = useState(event.instructor ? event.instructor.split(/[&,]/).map(s=>s.trim()) : []); const [tempInstructor, setTempInstructor] = useState(''); const sortedCustomers = useMemo(() => { if (!event.customers) return []; return [...event.customers].sort((a, b) => { if (a.transport === '共乘' && b.transport !== '共乘') return -1; if (a.transport !== '共乘' && b.transport === '共乘') return 1; return 0; }); }, [event.customers]); const carpoolCount = event.customers ? event.customers.filter(c => c.transport === '共乘').length : 0; const checkedInCount = event.customers ? event.customers.filter(c => c.isCheckedIn).length : 0; const handleTaskToggle = (index) => { const newTasks = [...tasks]; newTasks[index].completed = !newTasks[index].completed; setTasks(newTasks); }; const handleAddTask = () => { const name = prompt("任務名稱:"); if(name) setTasks([...tasks, { id: `custom_${Date.now()}`, name, fields: [], completed: false }]); }; const handleDeleteTask = (index) => { if(confirm("刪除?")) { const n=[...tasks]; n.splice(index,1); setTasks(n); } }; const addInstructor = (name) => { const clean = name.trim(); if(!clean) return; const isResting = instructorSchedule[event.date] && instructorSchedule[event.date].includes(clean); if (isResting) { if(!confirm(`${clean} 在 ${event.date} 已排休，確定要排入嗎？`)) return; } if (!instructors.includes(clean)) setInstructors([...instructors, clean]); setTempInstructor(''); }; const removeInstructor = (name) => { setInstructors(instructors.filter(i => i !== name)); }; const handleSave = () => { const newInstructorStr = instructors.join(' & '); onSaveConfig({ capacity: parseInt(capacity), tasks, note: eventNote, time: eventTime, link: eventLink }, newInstructorStr); onClose(); }; const progress = Math.round((tasks.filter(t => t.completed).length / Math.max(tasks.length, 1)) * 100); return ( <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 fade-in backdrop-blur-sm"><div className="bg-white rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh] shadow-2xl"><div className="p-6 border-b border-slate-100 flex justify-between items-center"><div><div className="text-xs text-blue-600 font-bold bg-blue-50 px-2 py-1 rounded mb-1 inline-block">{event.date}</div><h3 className="text-xl font-bold text-slate-800">{event.eventName}</h3></div><button onClick={onClose}><Icon name="x" className="text-slate-400 hover:text-slate-600"/></button></div><div className="p-6 overflow-y-auto space-y-6"><section><h4 className="font-bold text-slate-700 mb-2 flex items-center"><Icon name="user" size={18} className="mr-2"/> 帶團講師</h4><div className="bg-slate-50 p-3 rounded-xl border border-slate-200"><div className="flex flex-wrap gap-2 mb-2">{instructors.map(ins=><div key={ins} className="flex items-center bg-white text-blue-700 px-2 py-1 rounded-md text-sm border border-blue-100 shadow-sm"><span className="mr-1">{ins}</span><button onClick={()=>removeInstructor(ins)}><Icon name="x" size={14} className="text-slate-400 hover:text-red-500"/></button></div>)}{instructors.length===0 && <span className="text-xs text-slate-400 py-1">未指定講師</span>}</div><div className="flex gap-2 mb-2"><input type="text" className="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" value={tempInstructor} onChange={e=>setTempInstructor(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addInstructor(tempInstructor)} placeholder="輸入名字..."/><button onClick={()=>addInstructor(tempInstructor)} className="px-3 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200"><Icon name="plus" size={16}/></button></div><div className="flex flex-wrap gap-2">{availableInstructors.slice(0,5).map(i=><button key={i} onClick={()=>addInstructor(i)} className="text-xs px-2 py-1 bg-white border rounded-full hover:bg-blue-50 text-slate-600">+ {i}</button>)}</div></div></section> <section> <div className="flex justify-between items-center mb-3"> <h4 className="font-bold text-slate-700 flex items-center"><Icon name="users" size={18} className="mr-2"/> 報名名單 ({checkedInCount}/{event.count})</h4> <span className="text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-full">共乘需求: {carpoolCount} 人</span> </div> <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 max-h-60 overflow-y-auto"> {sortedCustomers.length > 0 ? ( <ul className="space-y-2"> {sortedCustomers.map((c, i) => ( <li key={i} className={`flex justify-between items-center text-sm p-2 rounded-lg ${c.transport === '共乘' ? 'bg-white border border-orange-100 shadow-sm' : 'border-b border-slate-100'}`}> <div className="flex items-center gap-3"> <button onClick={(e)=>{e.stopPropagation(); onCheckInToggle(c.id, c.isCheckedIn);}} className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${c.isCheckedIn ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-slate-300 text-transparent hover:border-blue-400'}`}> <Icon name="check" size={14} /> </button> <div className="flex flex-col"> <span className={`font-medium ${c.isCheckedIn ? 'text-green-700' : 'text-slate-700'}`}>{c.customerName}</span> {c.transport === '共乘' && <span className="text-[10px] text-orange-500 flex items-center"><Icon name="car" size={10} className="mr-0.5"/> 共乘</span>} </div> </div> <div className="flex items-center gap-2"> <span className="text-xs text-slate-400">{c.source || '-'}</span> {c.isCheckedIn && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded">已報到</span>} </div> </li> ))} </ul> ) : <div className="text-slate-400 text-center text-sm py-2">目前尚無報名</div>} </div> </section> <section> <h4 className="font-bold text-slate-700 mb-3 flex items-center"><Icon name="settings" size={18} className="mr-2"/> 活動設定</h4> <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4"> <div className="grid grid-cols-2 gap-4"> <div> <span className="text-slate-500 text-xs font-bold mb-1 block">活動時間</span> <input type="time" value={eventTime} onChange={e=>setEventTime(e.target.value)} className="w-full px-2 py-1.5 text-center border border-slate-300 rounded-lg font-bold outline-none focus:ring-2 focus:ring-blue-500 bg-white"/> </div> <div> <span className="text-slate-500 text-xs font-bold mb-1 block">人數上限</span> <input type="number" value={capacity} onChange={e=>setCapacity(e.target.value)} className="w-full px-2 py-1.5 text-center border border-slate-300 rounded-lg font-bold outline-none focus:ring-2 focus:ring-blue-500 bg-white"/> </div> </div> <div> <label className="text-xs font-bold text-slate-500 mb-1 block">活動報名連結 (前台點擊跳轉)</label> <input type="text" className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" placeholder="https://..." value={eventLink} onChange={e=>setEventLink(e.target.value)} /> </div> <div> <label className="text-xs font-bold text-slate-500 mb-1 block">活動專屬備註</label> <textarea className="w-full p-2 border border-slate-300 rounded-lg text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 outline-none" placeholder="例如: 記得帶無線電..." value={eventNote} onChange={e=>setEventNote(e.target.value)}></textarea> </div> </div> </section> <section><div className="flex justify-between items-center mb-2"><h4 className="font-bold text-slate-700 flex items-center"><Icon name="check-square" size={18} className="mr-2"/> 執行任務</h4><button onClick={handleAddTask} className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 flex items-center"><Icon name="plus" size={14} className="mr-1"/> 新增</button></div><div className="w-full h-1.5 bg-slate-100 rounded-full mb-4 overflow-hidden"><div className="h-full bg-green-500 transition-all duration-500" style={{width: `${progress}%`}}></div></div><div className="space-y-2">{tasks.map((t, i) => (<div key={i} className="flex items-center justify-between p-2.5 border border-slate-200 rounded-lg hover:bg-slate-50 group"><div className="flex items-center gap-3 cursor-pointer" onClick={()=>handleTaskToggle(i)}><div className={`w-4 h-4 rounded border flex items-center justify-center ${t.completed ? 'bg-green-500 border-green-500 text-white' : 'border-slate-300'}`}>{t.completed && <Icon name="check" size={12}/>}</div><span className={`text-sm ${t.completed ? 'text-slate-400 line-through' : 'text-slate-700 font-medium'}`}>{t.name}</span></div><button onClick={()=>handleDeleteTask(i)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Icon name="trash-2" size={14}/></button></div>))}</div></section></div><div className="p-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl flex justify-end gap-2"><button onClick={onClose} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg">取消</button><button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-md">儲存設定</button></div></div></div>); };
+        const CreateEventModal = ({ onClose, onSave, customTemplates, onSaveTemplate, onDeleteTemplate, availableInstructors, instructorSchedule }) => { /* ...same... */ const [mode, setMode] = useState('template'); const [isCreatingTemplate, setIsCreatingTemplate] = useState(false); const [calendarMonth, setCalendarMonth] = useState(new Date()); const [formData, setFormData] = useState({ dates: [], eventName: '', instructors: [] }); const [tempInstructor, setTempInstructor] = useState(''); const [newTemplateData, setNewTemplateData] = useState({ id: null, name: '', eventName: '', instructor: '' }); const unavailableInstructors = useMemo(() => { const unavailable = new Set(); formData.dates.forEach(date => { const resting = instructorSchedule[date] || []; resting.forEach(name => unavailable.add(name)); }); return unavailable; }, [formData.dates, instructorSchedule]); const handleTemplateSelect = (tpl) => { let tplInstructors = []; if (tpl.instructor) tplInstructors = tpl.instructor.split(/[&,]/).map(s => s.trim()); setFormData({ ...formData, eventName: tpl.eventName, instructors: tplInstructors }); }; const handleEditTemplate = (e, tpl) => { e.stopPropagation(); setNewTemplateData({ id: tpl.id, name: tpl.name, eventName: tpl.eventName, instructor: tpl.instructor }); setIsCreatingTemplate(true); }; const toggleDate = (year, month, day) => { const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`; let newDates = formData.dates.includes(dateStr) ? formData.dates.filter(d => d !== dateStr) : [...formData.dates, dateStr].sort(); setFormData({ ...formData, dates: newDates }); }; const addInstructor = (name) => { const clean = name.trim(); const isResting = formData.dates.some(d => instructorSchedule[d] && instructorSchedule[d].includes(clean)); if (isResting) { if(!confirm(`${clean} 在部分選定的日期已排休，確定要排入嗎？`)) return; } if (clean && !formData.instructors.includes(clean)) setFormData({ ...formData, instructors: [...formData.instructors, clean] }); setTempInstructor(''); }; const removeInstructor = (name) => { setFormData({ ...formData, instructors: formData.instructors.filter(i => i !== name) }); }; const handleSubmitEvent = () => { if (formData.dates.length === 0) { alert("請至少選擇一個日期"); return; } onSave(formData); }; const handleSaveNewTemplate = () => { if (!newTemplateData.name) { alert("請輸入模板名稱"); return; } onSaveTemplate(newTemplateData); setIsCreatingTemplate(false); setNewTemplateData({ id: null, name: '', eventName: '', instructor: '' }); }; const renderCalendar = () => { const year = calendarMonth.getFullYear(); const month = calendarMonth.getMonth(); const daysInMonth = getDaysInMonth(year, month); const firstDay = getFirstDayOfMonth(year, month); const days = Array(firstDay).fill(null).concat([...Array(daysInMonth).keys()].map(i => i + 1)); return ( <div className="bg-slate-50 p-4 rounded-xl border border-slate-200"> <div className="flex justify-between items-center mb-4"> <button onClick={() => setCalendarMonth(new Date(year, month - 1))}><Icon name="chevron-left" size={20}/></button> <span className="font-bold text-slate-700">{year}年 {month + 1}月</span> <button onClick={() => setCalendarMonth(new Date(year, month + 1))}><Icon name="chevron-right" size={20}/></button> </div> <div className="grid grid-cols-7 text-center mb-2 text-xs font-bold text-slate-400">{['日','一','二','三','四','五','六'].map(d=><div key={d}>{d}</div>)}</div> <div className="grid grid-cols-7 gap-1"> {days.map((day, i) => ( <div key={i} className="aspect-square flex items-center justify-center"> {day && (<button onClick={() => toggleDate(year, month, day)} className={`w-8 h-8 rounded-full text-sm transition-all ${formData.dates.includes(`${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`) ? 'bg-blue-600 text-white shadow-md' : 'hover:bg-blue-100 text-slate-600'}`}>{day}</button>)} </div> ))} </div> </div> ); }; return ( <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 fade-in backdrop-blur-sm"> <div className="bg-white rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh] shadow-2xl"> <div className="p-6 border-b border-slate-100 flex justify-between items-center"><h3 className="text-xl font-bold flex items-center gap-2"><Icon name="zap" className="text-yellow-500"/> 快速開團</h3><button onClick={onClose}><Icon name="x" className="text-slate-400"/></button></div> <div className="p-6 overflow-y-auto space-y-6"> {!isCreatingTemplate ? ( <> <div className="flex bg-slate-100 p-1 rounded-lg"><button onClick={()=>setMode('template')} className={`flex-1 py-1.5 text-sm rounded-md transition-all ${mode==='template'?'bg-white shadow text-blue-600':'text-slate-500'}`}>使用模板</button><button onClick={()=>setMode('custom')} className={`flex-1 py-1.5 text-sm rounded-md transition-all ${mode==='custom'?'bg-white shadow text-blue-600':'text-slate-500'}`}>完全自訂</button></div> {mode === 'template' && ( <div className="grid grid-cols-3 gap-3"> {[...DEFAULT_EVENT_TEMPLATES, ...customTemplates].map((tpl, i) => ( <div key={i} onClick={()=>handleTemplateSelect(tpl)} className={`relative border rounded-xl p-3 cursor-pointer text-center hover:bg-blue-50 transition-all group ${formData.eventName===tpl.eventName?'border-blue-500 ring-1 ring-blue-500 bg-blue-50':'border-slate-200'}`}> <div className="font-bold text-slate-700 text-sm mb-1">{tpl.name}</div><div className="text-xs text-slate-500">{tpl.instructor}</div> {!tpl.isSystem && <button onClick={(e)=>handleEditTemplate(e, tpl)} className="absolute top-1 right-1 p-1 bg-white rounded-full shadow-sm text-slate-300 hover:text-blue-500 opacity-0 group-hover:opacity-100 transition"><Icon name="edit-2" size={12}/></button>} </div> ))} <button onClick={()=>setIsCreatingTemplate(true)} className="border border-dashed border-slate-300 rounded-xl p-3 flex flex-col items-center justify-center text-slate-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-all"><Icon name="plus-circle" className="mb-1"/><span className="text-xs">新增模板</span></button> </div> )} <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-100"> <div><label className="block text-sm font-medium text-slate-700 mb-2">1. 選擇日期 (多選)</label>{renderCalendar()}</div> <div className="space-y-4"> <div><label className="block text-sm font-medium text-slate-700 mb-1">2. 活動名稱</label><input type="text" className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" value={formData.eventName} onChange={e=>setFormData({...formData, eventName: e.target.value})} placeholder="輸入名稱..."/></div> <div> <label className="block text-sm font-medium text-slate-700 mb-1">3. 帶團講師</label> <div className="flex flex-wrap gap-2 mb-2 min-h-[38px] p-2 bg-white border border-slate-200 rounded-lg">{formData.instructors.map(ins=><div key={ins} className="flex items-center bg-blue-50 text-blue-700 px-2 py-1 rounded text-sm"><span className="mr-1">{ins}</span><button onClick={()=>setFormData({...formData, instructors: formData.instructors.filter(i=>i!==ins)})}><Icon name="x" size={14}/></button></div>)}</div> <div className="flex gap-2"><input type="text" className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" value={tempInstructor} onChange={e=>setTempInstructor(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addInstructor(tempInstructor)} placeholder="輸入名字..."/><button onClick={()=>addInstructor(tempInstructor)} className="px-3 bg-slate-100 rounded-lg hover:bg-slate-200"><Icon name="plus" size={18}/></button></div> <div className="flex flex-wrap gap-2 mt-2">{availableInstructors.slice(0,6).map(i=><button key={i} onClick={()=>addInstructor(i)} className={`text-xs px-2 py-1 border rounded-full transition ${unavailableInstructors.has(i)?'bg-slate-100 text-slate-400 border-slate-200':'bg-slate-50 hover:bg-blue-50 text-slate-600'}`}>+ {i}</button>)}</div> </div> </div> </div> </> ) : ( <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3"> <div className="flex justify-between"><h4 className="font-bold">{newTemplateData.id ? '編輯模板' : '建立新模板'}</h4><button onClick={()=>{setIsCreatingTemplate(false);setNewTemplateData({id:null,name:'',eventName:'',instructor:''})}} className="text-sm text-slate-500">取消</button></div> <input type="text" className="w-full px-3 py-2 text-sm border rounded-lg" placeholder="模板名稱 (如: 豪華團)" value={newTemplateData.name} onChange={e=>setNewTemplateData({...newTemplateData, name: e.target.value})}/> <div className="grid grid-cols-2 gap-3"> <input type="text" className="w-full px-3 py-2 text-sm border rounded-lg" placeholder="預設活動名稱" value={newTemplateData.eventName} onChange={e=>setNewTemplateData({...newTemplateData, eventName: e.target.value})}/> <input type="text" className="w-full px-3 py-2 text-sm border rounded-lg" placeholder="預設講師" value={newTemplateData.instructor} onChange={e=>setNewTemplateData({...newTemplateData, instructor: e.target.value})}/> </div> <div className="flex gap-2">{newTemplateData.id && <button onClick={()=>{if(confirm("確定刪除?")){onDeleteTemplate(newTemplateData.id);setIsCreatingTemplate(false);setNewTemplateData({id:null,name:'',eventName:'',instructor:''})}}} className="flex-1 py-2 bg-red-100 text-red-600 rounded-lg text-sm">刪除</button>}<button onClick={handleSaveNewTemplate} className="flex-[2] py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm">儲存模板</button></div> </div> )} </div> {!isCreatingTemplate && <div className="p-4 border-t border-slate-100 flex justify-end items-center gap-4 bg-slate-50/50 rounded-b-2xl"><span className="text-xs text-slate-500">將建立 {formData.dates.length} 場活動</span><button onClick={()=>onSave(formData)} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-md">批量建立</button></div>} </div> </div> ); };
+        const TaskDetailModal = ({ task, eventData, onClose }) => { /* ...same... */ const [copied, setCopied] = useState(false); const exportTaskData = (type) => { let csvContent = "\uFEFF"; if (type === 'insurance') { csvContent += "姓名,生日,身分證字號\n"; eventData.customers.forEach(c => { const name = c.customerName || ''; const birth = c.birthday || ''; const id = c.idNo || ''; csvContent += `${name},${birth},${id}\n`; }); downloadCSV(csvContent, `${eventData.eventName}_保險名單.csv`); } else if (type === 'pre_letter') { csvContent += "活動日期,活動名稱,姓名,Email,交通方式,備註\n"; const sorted = [...eventData.customers].sort((a, b) => { const tA = a.transport || ''; const tB = b.transport || ''; if (tA === '共乘' && tB !== '共乘') return -1; if (tA !== '共乘' && tB === '共乘') return 1; return 0; }); sorted.forEach(c => { const date = eventData.date || ''; const evtName = eventData.eventName || ''; const name = c.customerName || ''; const email = c.email || ''; const transport = c.transport || ''; const notes = c.notes || ''; const cleanNotes = notes.includes(',') ? `"${notes}"` : notes; csvContent += `${date},${evtName},${name},${email},${transport},${cleanNotes}\n`; }); downloadCSV(csvContent, `${eventData.eventName}_行前信名單.csv`); } }; const renderContent = () => { if (task.type === 'insurance') { const copyText = eventData.customers.map(c => `${c.customerName}\t${c.idNo}\t${c.birthday}`).join('\n'); const handleCopy = () => { navigator.clipboard.writeText(copyText); setCopied(true); setTimeout(() => setCopied(false), 2000); }; return ( <div className="space-y-4"> <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg flex gap-3"> <Icon name="shield-check" className="text-amber-600 mt-0.5" size={20}/> <div className="text-sm text-amber-800 flex-1"> <p className="font-bold">保險辦理資訊</p> <p>請將下列名單複製並提供給保險業務，或直接匯出 Excel。</p> </div> </div> <div className="flex gap-2 justify-end"> <button onClick={() => exportTaskData('insurance')} className="flex items-center px-3 py-1.5 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 shadow-sm transition-colors"> <Icon name="download" size={14} className="mr-1"/> 匯出名單 (Excel) </button> <button onClick={handleCopy} className="flex items-center px-3 py-1.5 bg-white border border-slate-300 rounded text-xs font-medium hover:bg-slate-50 text-slate-700 shadow-sm transition-colors"> {copied ? <Icon name="check" size={14} className="mr-1 text-green-600"/> : <Icon name="copy" size={14} className="mr-1"/>} {copied ? '已複製' : '複製文字'} </button> </div> <div className="bg-slate-100 p-4 rounded-lg font-mono text-xs max-h-60 overflow-y-auto whitespace-pre border border-slate-200"> {copyText || "無資料"} </div> </div> ); } if (task.type === 'pre_letter') { const car = eventData.customers.filter(c=>c.transport==='共乘'); const self = eventData.customers.filter(c=>c.transport!=='共乘'); return ( <div className="space-y-4"> <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg flex gap-3"> <Icon name="mail" className="text-blue-600 mt-0.5" size={20}/> <div className="text-sm text-blue-800 flex-1"> <p className="font-bold">行前信寄送</p> <p>已自動分流共乘與自行前往的客戶。可匯出完整名單包含備註。</p> </div> </div> <div className="flex justify-end"> <button onClick={() => exportTaskData('pre_letter')} className="flex items-center px-3 py-1.5 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 shadow-sm transition-colors"> <Icon name="download" size={14} className="mr-1"/> 匯出名單 (Excel) </button> </div> <div className="grid grid-cols-2 gap-4"> <div className="border border-slate-200 p-3 rounded-lg bg-white"> <h4 className="font-bold text-slate-700 mb-2 text-sm flex items-center"><Icon name="car" size={14} className="mr-1 text-orange-500"/> 共乘 ({car.length})</h4> <div className="bg-slate-50 p-2 rounded text-xs h-32 overflow-y-auto text-slate-600"> {car.length ? car.map(c=>(<div key={c.id} className="mb-1">{c.customerName} <span className="text-slate-400">&lt;{c.email}&gt;</span></div>)) : <span className="text-slate-400">無</span>} </div> </div> <div className="border border-slate-200 p-3 rounded-lg bg-white"> <h4 className="font-bold text-slate-700 mb-2 text-sm flex items-center"><Icon name="footprints" size={14} className="mr-1 text-blue-500"/> 自行 ({self.length})</h4> <div className="bg-slate-50 p-2 rounded text-xs h-32 overflow-y-auto text-slate-600"> {self.length ? self.map(c=>(<div key={c.id} className="mb-1">{c.customerName} <span className="text-slate-400">&lt;{c.email}&gt;</span></div>)) : <span className="text-slate-400">無</span>} </div> </div> </div> </div> ); } return <div className="text-center text-slate-500 py-8">無特殊工具，請依一般流程執行。</div>; }; return <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 fade-in backdrop-blur-sm"><div className="bg-white rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh] shadow-2xl"><div className="p-6 border-b flex justify-between items-center"><div><div className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded inline-block mb-1">{eventData.date}</div><h3 className="text-xl font-bold">{task.name}</h3></div><button onClick={onClose}><Icon name="x"/></button></div><div className="p-6 overflow-y-auto">{renderContent()}</div></div></div>; };
         const MonthlyReport = ({ month, data }) => { /* ...same... */ const [expanded, setExpanded] = useState(false); const stats = useMemo(() => { const rev = data.reduce((a,c)=>a+c.price,0); const pax = data.length; const sources = {}; const activities = {}; data.forEach(c => { sources[c.source || '未知'] = (sources[c.source || '未知'] || 0) + 1; if (!activities[c.eventName]) { activities[c.eventName] = { count: 0, revenue: 0, dates: new Set() }; } activities[c.eventName].count += 1; activities[c.eventName].revenue += c.price; if (c.date) activities[c.eventName].dates.add(c.date + c.instructor); }); return { rev, pax, sources, activities }; }, [data]); return ( <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-4 transition-all"> <div className="p-4 flex justify-between items-center cursor-pointer hover:bg-slate-50" onClick={()=>setExpanded(!expanded)}> <div className="flex items-center gap-4"> <div className="text-lg font-bold text-slate-700">{month}</div> <div className="text-sm text-slate-500 bg-slate-100 px-2 py-0.5 rounded">總收 ${stats.rev.toLocaleString()}</div> <div className="text-sm text-slate-500">({stats.pax} 人)</div> </div> <Icon name={expanded ? 'chevron-up' : 'chevron-down'} className="text-slate-400"/> </div> {expanded && ( <div className="p-4 border-t border-slate-100 bg-slate-50/50 animate-in fade-in space-y-6"> <div> <h5 className="text-xs font-bold text-slate-500 mb-3 uppercase flex items-center"><Icon name="activity" size={14} className="mr-1"/> 各項活動表現</h5> <div className="bg-white border border-slate-200 rounded-xl overflow-hidden"> <table className="w-full text-left text-sm"> <thead className="bg-slate-50 border-b border-slate-100 text-slate-500"><tr><th className="px-4 py-2">活動名稱</th><th className="px-4 py-2">場次</th><th className="px-4 py-2">人數</th><th className="px-4 py-2">平均人數</th><th className="px-4 py-2 text-right">營收</th></tr></thead> <tbody className="divide-y divide-slate-100"> {Object.entries(stats.activities).map(([name, s], i) => { const sessionCount = s.dates.size || 1; return (<tr key={i} className="hover:bg-slate-50"><td className="px-4 py-2 font-medium text-slate-700">{name}</td><td className="px-4 py-2 text-slate-500">{sessionCount}</td><td className="px-4 py-2 text-slate-500">{s.count}</td><td className="px-4 py-2 text-slate-500">{(s.count / sessionCount).toFixed(1)}</td><td className="px-4 py-2 text-right font-mono text-slate-600">${s.revenue.toLocaleString()}</td></tr>); })} </tbody> </table> </div> </div> <div> <h5 className="text-xs font-bold text-slate-500 mb-2 uppercase flex items-center"><Icon name="share-2" size={14} className="mr-1"/> 報名管道分析</h5> <div className="flex flex-wrap gap-2">{Object.entries(stats.sources).map(([src, count]) => (<div key={src} className="text-xs px-3 py-1.5 bg-white border rounded-lg shadow-sm flex gap-2"><span className="text-slate-600">{src}</span><span className="font-bold text-blue-600">{count}</span><span className="text-slate-400">({Math.round(count/stats.pax*100)}%)</span></div>))}</div> </div> <div className="flex justify-end pt-2"><button onClick={(e)=>{e.stopPropagation(); downloadCSV(data.map(d=>Object.values(d).join(',')).join('\n'), `${month}_report.csv`)}} className="text-xs text-blue-600 hover:underline flex items-center bg-blue-50 px-3 py-1.5 rounded border border-blue-100"><Icon name="download" size={12} className="mr-1"/> 下載此月詳細報表</button></div> </div> )} </div> ); };
-        const EditRowModal = ({ rowData, onClose, onSave }) => { /* ...same... */ const [form, setForm] = useState({ ...rowData }); return (<div className="fixed inset-0 bg-black/50 z-[80] flex items-center justify-center p-4 fade-in backdrop-blur-sm"><div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl"><div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold">編輯報名資料</h3><button onClick={onClose}><Icon name="x"/></button></div><div className="space-y-4 max-h-[70vh] overflow-y-auto p-1"> <div className="grid grid-cols-2 gap-3"><div><label className="text-xs font-bold">日期</label><input type="date" className="w-full p-2 border rounded" value={form.date} onChange={e=>setForm({...form, date:e.target.value})}/></div><div><label className="text-xs font-bold">活動名稱</label><input type="text" className="w-full p-2 border rounded" value={form.eventName} onChange={e=>setForm({...form, eventName:e.target.value})}/></div></div> <div><label className="text-xs font-bold">客戶姓名</label><input type="text" className="w-full p-2 border rounded" value={form.customerName} onChange={e=>setForm({...form, customerName:e.target.value})}/></div> <div className="grid grid-cols-2 gap-3"><div><label className="text-xs font-bold">金額</label><input type="number" className="w-full p-2 border rounded" value={form.price} onChange={e=>setForm({...form, price:e.target.value})}/></div><div><label className="text-xs font-bold">交通</label><input type="text" className="w-full p-2 border rounded" value={form.transport} onChange={e=>setForm({...form, transport:e.target.value})}/></div></div> <div className="grid grid-cols-2 gap-3"><div><label className="text-xs font-bold">Email</label><input type="email" className="w-full p-2 border rounded" value={form.email||''} onChange={e=>setForm({...form, email:e.target.value})}/></div><div><label className="text-xs font-bold">手機</label><input type="text" className="w-full p-2 border rounded" value={form.phone||''} onChange={e=>setForm({...form, phone:e.target.value})}/></div></div> <div className="grid grid-cols-2 gap-3"><div><label className="text-xs font-bold">訂購日</label><input type="date" className="w-full p-2 border rounded" value={form.orderDate||''} onChange={e=>setForm({...form, orderDate:e.target.value})}/></div><div><label className="text-xs font-bold">身分證</label><input type="text" className="w-full p-2 border rounded" value={form.idNo||''} onChange={e=>setForm({...form, idNo:e.target.value})}/></div></div> <div className="grid grid-cols-2 gap-3"><div><label className="text-xs font-bold">生日</label><input type="date" className="w-full p-2 border rounded" value={form.birthday||''} onChange={e=>setForm({...form, birthday:e.target.value})}/></div><div><label className="text-xs font-bold">社群暱稱</label><input type="text" className="w-full p-2 border rounded" value={form.socialName||''} onChange={e=>setForm({...form, socialName:e.target.value})}/></div></div> <div className="grid grid-cols-2 gap-3"><div><label className="text-xs font-bold">報名管道</label><input type="text" className="w-full p-2 border rounded" value={form.source||''} onChange={e=>setForm({...form, source:e.target.value})}/></div><div><label className="text-xs font-bold">備註</label><input type="text" className="w-full p-2 border rounded" value={form.notes||''} onChange={e=>setForm({...form, notes:e.target.value})}/></div></div> </div><div className="flex justify-end mt-6 gap-2"><button onClick={onClose} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg">取消</button><button onClick={()=>onSave(form)} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">儲存變更</button></div></div></div>); };
-        const BulkImportModal = ({ onClose, onImport, existingData }) => { /* ...same... */ return <div className="fixed inset-0 bg-black/50 z-[80] flex items-center justify-center p-4 fade-in backdrop-blur-sm"><div className="bg-white rounded-2xl w-full max-w-2xl h-[85vh] flex flex-col shadow-2xl"><div className="p-6 border-b flex justify-between items-center"><h3 className="text-xl font-bold">批量匯入功能開發中...</h3><button onClick={onClose}><Icon name="x"/></button></div></div></div>; };
-        const DataRescueTab = ({ currentAppId, onSwitch }) => { /* ...same... */ const options = [ { id: 'crm-system-v1', label: 'v1 (您的真實資料)' }, { id: 'default-app-id', label: 'Default (舊版測試)' } ]; return ( <div className="bg-white p-6 rounded-2xl shadow-sm border border-orange-200"> <div className="flex items-start gap-4"> <div className="bg-orange-100 p-3 rounded-full text-orange-600"><Icon name="life-buoy" size={24}/></div> <div className="flex-1"> <h3 className="text-xl font-bold text-slate-800 mb-2">資料庫救援控制台</h3> <p className="text-sm text-slate-500 mb-4">如果您發現資料遺失，請嘗試切換下方的資料來源。這通常發生在系統更新後。</p> <div className="grid grid-cols-1 md:grid-cols-2 gap-4"> {options.map(opt => ( <div key={opt.id} onClick={() => onSwitch(opt.id)} className={`p-4 rounded-xl border cursor-pointer transition-all flex justify-between items-center ${currentAppId === opt.id ? 'bg-orange-50 border-orange-400 ring-1 ring-orange-400' : 'hover:bg-slate-50 border-slate-200'}`} > <div> <div className="font-bold text-slate-700">{opt.label}</div> <div className="text-xs text-slate-400 font-mono">{opt.id}</div> </div> {currentAppId === opt.id && <Icon name="check-circle" className="text-orange-500" size={20}/>} </div> ))} </div> </div> </div> </div> ); };
 
         const MainApp = () => {
             const [user, setUser] = useState(null);
+            const [userEmail, setUserEmail] = useState(''); 
+            const [viewMode, setViewMode] = useState('public');
+            const [showLoginModal, setShowLoginModal] = useState(false);
+            const [adminPassword, setAdminPassword] = useState('');
+
             const [activeTab, setActiveTab] = useState('events'); 
             const [loading, setLoading] = useState(true);
             const [isSaving, setIsSaving] = useState(false);
@@ -345,6 +261,12 @@
             const [projects, setProjects] = useState([]);
             const [promises, setPromises] = useState([]);
             const [instructorSchedule, setInstructorSchedule] = useState({}); 
+            
+            const [newPasswordInput, setNewPasswordInput] = useState('');
+            // [新增] 密碼更新按鈕的狀態
+            const [passwordSaveStatus, setPasswordSaveStatus] = useState('idle'); // 'idle', 'saving', 'success', 'error'
+            // [新增] 新增報名資料的按鈕狀態
+            const [addRegStatus, setAddRegStatus] = useState('idle'); // 'idle', 'saving', 'success'
 
             const [activeTaskDetail, setActiveTaskDetail] = useState(null);
             const [selectedCustomer, setSelectedCustomer] = useState('');
@@ -358,7 +280,10 @@
 
             useEffect(() => {
                 signInAnonymously(auth).catch(console.error);
-                return onAuthStateChanged(auth, u => setUser(u));
+                return onAuthStateChanged(auth, u => {
+                    setUser(u);
+                    if (u) setUserEmail(u.email || 'Guest'); 
+                });
             }, []);
 
             useEffect(() => {
@@ -366,6 +291,14 @@
                 setLoading(true);
                 const basePath = `artifacts/${dbSource}/public/data`;
                 
+                onSnapshot(doc(db, basePath, 'settings', 'auth'), s => {
+                    if (s.exists()) {
+                        setAdminPassword(s.data().password || '8888');
+                    } else {
+                        setAdminPassword('8888'); 
+                    }
+                });
+
                 const updateParsedData = (raw) => {
                     try {
                         const lines = raw.trim().split('\n');
@@ -399,7 +332,7 @@
                 });
                 const unsub4 = onSnapshot(collection(db, basePath, 'projects'), s => {
                     const p = []; s.forEach(d => p.push({id: d.id, ...d.data()})); 
-                    if(p.length===0 && !s.metadata.fromCache && dbSource === 'default-app-id') { 
+                    if(p.length===0 && !s.metadata.fromCache && dbSource === 'crm-system-v1') { 
                         INITIAL_PROJECTS.forEach(ip=>addDoc(collection(db, basePath, 'projects'), ip));
                     }
                     setProjects(p);
@@ -415,32 +348,54 @@
                 return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); };
             }, [user, dbSource]);
 
-            const handleToggleInstructorRest = async (date, name) => { /* ...same... */ if (!user) return; const currentResting = instructorSchedule[date] || []; let newResting; if (currentResting.includes(name)) { newResting = currentResting.filter(n => n !== name); } else { newResting = [...currentResting, name]; } const newSchedule = { ...instructorSchedule }; if (newResting.length > 0) { newSchedule[date] = newResting; } else { delete newSchedule[date]; } await setDoc(doc(db, `artifacts/${dbSource}/public/data`, 'settings', 'schedule'), { resting: newSchedule }, { merge: true }); };
-            const handleSaveCSV = async (newData) => { if(!user) return; setIsSaving(true); try { setCsvInput(newData); await setDoc(doc(db, `artifacts/${dbSource}/public/data`, 'settings', 'main'), { csvData: newData }, { merge: true }); } catch(e) { console.error(e); } finally { setIsSaving(false); } };
-            
-            const arrayToCSV = (dataArray) => { 
-                let csv = CSV_HEADER + '\n'; 
-                dataArray.forEach(row => { 
-                    const check = row.isCheckedIn ? '1' : '0';
-                    const line = `${row.date||''},${row.eventName||''},${row.instructor||''},${row.customerName||''},${row.price||0},${row.transport||''},${row.idNo||''},${row.birthday||''},${row.email||''},${row.source||''},${row.socialName||''},${toCSVField(row.notes)},${row.orderDate||''},${row.phone||''},${check}`; 
-                    csv += line + '\n'; 
-                }); 
-                return csv; 
-            };
-            
-            const handleUpdateRow = async (newRowData) => { const newData = parsedData.map(row => row.id === newRowData.id ? newRowData : row); await handleSaveCSV(arrayToCSV(newData)); setEditingRow(null); };
-            const handleDeleteRow = async (id) => { if(!confirm("確定刪除此筆資料？")) return; const newData = parsedData.filter(row => row.id !== id); await handleSaveCSV(arrayToCSV(newData)); };
-            const handleBulkImport = async (newRows) => { const currentRows = [...parsedData]; const formattedNewRows = newRows.map(r => ({ date: r.date || '', eventName: r.eventName || '', instructor: r.instructor || '', customerName: r.customerName || '', price: r.price || 0, transport: '', idNo: r.idNo || '', birthday: r.birthday || '', email: r.email || '', source: r.source || '', socialName: r.socialName || '', notes: r.notes || '', orderDate: new Date().toISOString().split('T')[0], phone: r.phone || '' })); const finalData = [...currentRows, ...formattedNewRows]; await handleSaveCSV(arrayToCSV(finalData)); };
-            const handleAddManualReg = async () => { if(!newReg.date || !newReg.eventName || !newReg.customerName) { alert("請填寫必要欄位"); return; } let currentData = csvInput.trim(); if (!currentData || !currentData.startsWith("日期")) { currentData = CSV_HEADER + "\n" + currentData; } const newRow = `\n${newReg.date},${newReg.eventName},${newReg.instructor},${newReg.customerName},${newReg.price},${newReg.transport},${newReg.idNo},${newReg.birthday},${newReg.email},${newReg.source},,${newReg.orderDate},${newReg.phone},0`; const updatedCSV = currentData + newRow; await handleSaveCSV(updatedCSV); setNewReg({ date: '', eventName: '', instructor: '', customerName: '', price: '', transport: '', idNo: '', birthday: '', email: '', source: '', orderDate: new Date().toISOString().split('T')[0], phone: '' }); alert("新增成功！"); };
-            const handleCreateEvent = async ({ dates, eventName, instructors }) => { let rows = ''; const instr = instructors.join(' & '); dates.forEach(d => rows += `\n${d},${eventName},${instr},開放報名中,0,,,,,,,,,0`); await handleSaveCSV(csvInput + rows); setShowCreateEvent(false); };
-            
-            const handleCheckInToggle = async (customerId, currentStatus) => {
-                const row = parsedData.find(r => r.id === customerId);
-                if (row) {
-                    await handleUpdateRow({ ...row, isCheckedIn: !currentStatus });
+            const handleVerifyLogin = (inputPwd, callback) => {
+                if (inputPwd === adminPassword) {
+                    setViewMode('admin');
+                    setShowLoginModal(false);
+                    callback(true);
+                } else {
+                    callback(false);
                 }
             };
 
+            // [修改] 不使用 confirm/alert，改用狀態回饋
+            const handleUpdatePassword = async () => {
+                if (!newPasswordInput) return;
+                setPasswordSaveStatus('saving');
+                try {
+                    await setDoc(doc(db, `artifacts/${dbSource}/public/data`, 'settings', 'auth'), { password: newPasswordInput }, { merge: true });
+                    setNewPasswordInput('');
+                    setPasswordSaveStatus('success');
+                    setTimeout(() => setPasswordSaveStatus('idle'), 2000);
+                } catch (e) {
+                    console.error("Password update failed", e);
+                    setPasswordSaveStatus('idle'); // 簡單處理錯誤，恢復按鈕
+                }
+            };
+
+            const handleToggleInstructorRest = async (date, name) => { /* ...same... */ if (!user) return; const currentResting = instructorSchedule[date] || []; let newResting; if (currentResting.includes(name)) { newResting = currentResting.filter(n => n !== name); } else { newResting = [...currentResting, name]; } const newSchedule = { ...instructorSchedule }; if (newResting.length > 0) { newSchedule[date] = newResting; } else { delete newSchedule[date]; } await setDoc(doc(db, `artifacts/${dbSource}/public/data`, 'settings', 'schedule'), { resting: newSchedule }, { merge: true }); };
+            const handleSaveCSV = async (newData) => { if(!user) return; setIsSaving(true); try { setCsvInput(newData); await setDoc(doc(db, `artifacts/${dbSource}/public/data`, 'settings', 'main'), { csvData: newData }, { merge: true }); } catch(e) { console.error(e); } finally { setIsSaving(false); } };
+            const arrayToCSV = (dataArray) => { let csv = CSV_HEADER + '\n'; dataArray.forEach(row => { const check = row.isCheckedIn ? '1' : '0'; const line = `${row.date||''},${row.eventName||''},${row.instructor||''},${row.customerName||''},${row.price||0},${row.transport||''},${row.idNo||''},${row.birthday||''},${row.email||''},${row.source||''},${row.socialName||''},${toCSVField(row.notes)},${row.orderDate||''},${row.phone||''},${check}`; csv += line + '\n'; }); return csv; };
+            const handleUpdateRow = async (newRowData) => { const newData = parsedData.map(row => row.id === newRowData.id ? newRowData : row); await handleSaveCSV(arrayToCSV(newData)); setEditingRow(null); };
+            const handleDeleteRow = async (id) => { if(!confirm("確定刪除此筆資料？")) return; const newData = parsedData.filter(row => row.id !== id); await handleSaveCSV(arrayToCSV(newData)); };
+            const handleBulkImport = async (newRows) => { const currentRows = [...parsedData]; const formattedNewRows = newRows.map(r => ({ date: r.date || '', eventName: r.eventName || '', instructor: r.instructor || '', customerName: r.customerName || '', price: r.price || 0, transport: '', idNo: r.idNo || '', birthday: r.birthday || '', email: r.email || '', source: r.source || '', socialName: r.socialName || '', notes: r.notes || '', orderDate: new Date().toISOString().split('T')[0], phone: r.phone || '' })); const finalData = [...currentRows, ...formattedNewRows]; await handleSaveCSV(arrayToCSV(finalData)); };
+            
+            // [修改] 不使用 alert，使用 addRegStatus
+            const handleAddManualReg = async () => { 
+                if(!newReg.date || !newReg.eventName || !newReg.customerName) { return; } // 簡單防呆
+                setAddRegStatus('saving');
+                let currentData = csvInput.trim(); 
+                if (!currentData || !currentData.startsWith("日期")) { currentData = CSV_HEADER + "\n" + currentData; } 
+                const newRow = `\n${newReg.date},${newReg.eventName},${newReg.instructor},${newReg.customerName},${newReg.price},${newReg.transport},${newReg.idNo},${newReg.birthday},${newReg.email},${newReg.source},,${newReg.orderDate},${newReg.phone},0`; 
+                const updatedCSV = currentData + newRow; 
+                await handleSaveCSV(updatedCSV); 
+                setNewReg({ date: '', eventName: '', instructor: '', customerName: '', price: '', transport: '', idNo: '', birthday: '', email: '', source: '', orderDate: new Date().toISOString().split('T')[0], phone: '' }); 
+                setAddRegStatus('success');
+                setTimeout(() => setAddRegStatus('idle'), 2000);
+            };
+            
+            const handleCreateEvent = async ({ dates, eventName, instructors }) => { let rows = ''; const instr = instructors.join(' & '); dates.forEach(d => rows += `\n${d},${eventName},${instr},開放報名中,0,,,,,,,,,0`); await handleSaveCSV(csvInput + rows); setShowCreateEvent(false); };
+            const handleCheckInToggle = async (customerId, currentStatus) => { const row = parsedData.find(r => r.id === customerId); if (row) { await handleUpdateRow({ ...row, isCheckedIn: !currentStatus }); } };
             const handleSaveEventConfig = async (oldEventKey, newConfig, newInstructorStr) => { const affectedRows = parsedData.filter(r => { const key = `${r.date}_${r.eventName}_${r.instructor}`.replace(/[\/\\#\?]/g, '-'); return key === oldEventKey; }); if (newInstructorStr !== undefined) { const newRows = parsedData.map(r => { const key = `${r.date}_${r.eventName}_${r.instructor}`.replace(/[\/\\#\?]/g, '-'); if (key === oldEventKey) { return { ...r, instructor: newInstructorStr }; } return r; }); await handleSaveCSV(arrayToCSV(newRows)); if (affectedRows.length > 0) { const evt = affectedRows[0]; const newKey = `${evt.date}_${evt.eventName}_${newInstructorStr}`.replace(/[\/\\#\?]/g, '-'); if (newKey !== oldEventKey) { await setDoc(doc(db, `artifacts/${dbSource}/public/data`, 'event_configs', newKey), newConfig, { merge: true }); } else { await setDoc(doc(db, `artifacts/${dbSource}/public/data`, 'event_configs', oldEventKey), newConfig, { merge: true }); } } } else { await setDoc(doc(db, `artifacts/${dbSource}/public/data`, 'event_configs', oldEventKey), newConfig, { merge: true }); } };
             const handleSaveTemplate = (tpl) => { let newList; if (tpl.id) { newList = customTemplates.map(t => t.id === tpl.id ? t : t); } else { newList = [...customTemplates, { ...tpl, id: `custom_${Date.now()}` }]; } setDoc(doc(db, `artifacts/${dbSource}/public/data`, 'settings', 'templates'), { list: newList }, { merge: true }); };
             const handleAddTemplate = (tpl) => handleSaveTemplate(tpl);
@@ -477,10 +432,82 @@
 
             if(loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-400"><Icon name="loader-2" className="animate-spin mr-2"/> 載入中...</div>;
             
-            // [核心修復] 使用 React 狀態取得最新的活動資料，確保 Modal 內的勾選狀態是即時的
-            // 這樣即使 stats 更新，這裡也會同步更新
             const activeEditingEvent = editingEvent && stats.events[editingEvent.key] ? stats.events[editingEvent.key] : editingEvent;
 
+            // [新] 前台渲染邏輯
+            if (viewMode === 'public') {
+                return (
+                    <div className="min-h-screen bg-white">
+                        <nav className="glass-nav sticky top-0 z-50 px-6 py-4 flex justify-between items-center">
+                            <Logo className="h-8 w-auto" />
+                            <button 
+                                onClick={() => setShowLoginModal(true)}
+                                className="text-sm text-slate-500 hover:text-blue-600 flex items-center gap-1 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors"
+                            >
+                                <Icon name="lock" size={14}/> 管理員登入
+                            </button>
+                        </nav>
+                        <main className="max-w-5xl mx-auto p-6">
+                            <div className="mb-8 text-center">
+                                <h1 className="text-3xl font-bold text-slate-800 mb-2">活動場次表</h1>
+                                <p className="text-slate-500">歡迎查看最新的活動資訊</p>
+                            </div>
+
+                            <div className="bg-white rounded-3xl shadow-lg border border-slate-100 overflow-hidden">
+                                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                                    <div className="flex items-center gap-4">
+                                        <button onClick={prevMonth} className="p-2 hover:bg-white hover:shadow-sm rounded-full transition-all text-slate-500"><Icon name="chevron-left"/></button>
+                                        <h2 className="text-2xl font-bold text-slate-800">{currentDate.getFullYear()}年 {currentDate.getMonth()+1}月</h2>
+                                        <button onClick={nextMonth} className="p-2 hover:bg-white hover:shadow-sm rounded-full transition-all text-slate-500"><Icon name="chevron-right"/></button>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-7 text-center py-3 text-sm font-bold text-slate-400 bg-white border-b border-slate-100">
+                                    {['日','一','二','三','四','五','六'].map(d=><div key={d}>{d}</div>)}
+                                </div>
+                                <div className="grid grid-cols-7 auto-rows-[160px] bg-slate-50">
+                                    {calendarDays.map((day, i) => {
+                                        const dateStr = day ? `${currentDate.getFullYear()}-${String(currentDate.getMonth()+1).padStart(2,'0')}-${String(day).padStart(2,'0')}` : '';
+                                        const dayEvents = day ? Object.values(stats.events).filter(e => e.date === dateStr) : [];
+                                        const isToday = day && new Date().toDateString() === new Date(currentDate.getFullYear(), currentDate.getMonth(), day).toDateString();
+
+                                        return (
+                                            <div key={i} className={`border-r border-b border-slate-200 p-2 relative transition-all hover:bg-white ${!day ? 'bg-slate-50' : 'bg-white'}`}>
+                                                {day && (
+                                                    <>
+                                                        <div className={`text-sm font-bold mb-2 w-7 h-7 flex items-center justify-center rounded-full ${isToday ? 'bg-blue-600 text-white' : 'text-slate-700'}`}>{day}</div>
+                                                        <div className="space-y-2 overflow-y-auto max-h-[110px] no-scrollbar">
+                                                            {dayEvents.map((e, idx) => {
+                                                                const cfg = eventConfigs[e.key] || {};
+                                                                return (
+                                                                    <div 
+                                                                        key={idx} 
+                                                                        onClick={() => cfg.link ? window.open(cfg.link, '_blank') : null}
+                                                                        className={`p-2 rounded-xl border transition-all group ${cfg.link ? 'cursor-pointer hover:ring-2 hover:ring-blue-200 hover:border-blue-300 hover:shadow-md' : ''} bg-blue-50 border-blue-100`}
+                                                                    >
+                                                                        <div className="font-bold text-sm text-slate-800 mb-1 leading-tight">{e.eventName}</div>
+                                                                        <div className="flex justify-between items-center text-xs text-slate-500">
+                                                                            <div className="flex items-center gap-1"><Icon name="user" size={12}/> {e.instructor || '未定'}</div>
+                                                                            <div className="font-bold bg-white px-1.5 py-0.5 rounded text-blue-600">{e.count}人</div>
+                                                                        </div>
+                                                                        {cfg.time && <div className="mt-1 text-[10px] text-slate-400 flex items-center gap-1"><Icon name="clock" size={10}/> {cfg.time}</div>}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </main>
+                        {showLoginModal && <LoginModal onClose={() => setShowLoginModal(false)} onLogin={handleVerifyLogin} />}
+                    </div>
+                );
+            }
+
+            // Admin View
             return (
                 <div className="flex min-h-screen">
                     <aside className="w-64 bg-white border-r border-slate-200 flex flex-col p-4 hidden md:flex sticky top-0 h-screen">
@@ -495,16 +522,25 @@
                             <NavItem id="dashboard" icon="trending-up" label="營運儀表板" activeTab={activeTab} setActiveTab={setActiveTab} />
                             <NavItem id="crm" icon="users" label="客戶 CRM" activeTab={activeTab} setActiveTab={setActiveTab} />
                         </nav>
-                        <div className="pt-4 border-t border-slate-100">
+                        <div className="pt-4 border-t border-slate-100 space-y-2">
                             <NavItem id="import" icon="database" label="資料庫管理" activeTab={activeTab} setActiveTab={setActiveTab} />
+                            <button 
+                                onClick={() => setViewMode('public')}
+                                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:bg-slate-50 hover:text-blue-600 transition-all"
+                            >
+                                <Icon name="eye" size={20} />
+                                <span className="font-medium tracking-wide">預覽前台</span>
+                            </button>
                         </div>
                     </aside>
 
                     <main className="flex-1 p-6 md:p-10 overflow-y-auto bg-slate-50/50 relative">
                         <div className="md:hidden mb-6 flex justify-between items-center">
                             <Logo className="h-6 w-auto" />
+                            <button onClick={()=>setShowDebug(true)}><Icon name="activity"/></button>
                         </div>
 
+                        {/* Tasks, Promises, Events, Projects, Dashboard, CRM, Import */}
                         {activeTab === 'tasks' && (
                             <div className="max-w-6xl mx-auto fade-in">
                                 <header className="mb-8 flex justify-between items-end">
@@ -549,9 +585,7 @@
                             </div>
                         )}
 
-                        {/* ... (Promises with Search, Events, Projects, Dashboard, CRM, Import) ... */}
-                        {/* 這裡的內容與之前相同，僅省略以節省篇幅 */}
-                        
+                        {/* ... (Promises with Search, Events, Projects, Dashboard, CRM, Import logic same as before) ... */}
                         {activeTab === 'promises' && (
                             <div className="max-w-6xl mx-auto fade-in">
                                 <header className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -633,13 +667,8 @@
                                                                                     {cfg.time && <div className="text-[10px] text-slate-500 bg-white px-1 rounded ml-1 whitespace-nowrap">{cfg.time}</div>}
                                                                                 </div>
                                                                                 <div className="flex justify-between items-center">
-                                                                                    <div className="text-[10px] text-slate-600 flex items-center truncate max-w-[60%]">
-                                                                                        <Icon name="user" size={10} className="mr-0.5 flex-shrink-0"/>
-                                                                                        <span className="truncate">{e.instructor || '未定'}</span>
-                                                                                    </div>
-                                                                                    <div className="text-[10px] font-bold text-blue-600 bg-white px-1 rounded-md shadow-sm">
-                                                                                        {e.count}人
-                                                                                    </div>
+                                                                                    <div className="text-[10px] text-slate-600 flex items-center truncate max-w-[60%]"><Icon name="user" size={10} className="mr-0.5 flex-shrink-0"/><span className="truncate">{e.instructor || '未定'}</span></div>
+                                                                                    <div className="text-[10px] font-bold text-blue-600 bg-white px-1 rounded-md shadow-sm">{e.count}人</div>
                                                                                 </div>
                                                                             </div>
                                                                         );
@@ -685,37 +714,13 @@
 
                         {activeTab === 'dashboard' && (
                             <div className="fade-in max-w-6xl mx-auto space-y-8">
-                                <header className="flex justify-between items-center">
-                                    <h2 className="text-2xl font-bold">營運儀表板</h2>
-                                    <button onClick={()=>downloadCSV(csvInput, 'full_export.csv')} className="text-sm bg-slate-800 text-white px-4 py-2 rounded-lg flex items-center gap-2"><Icon name="download" size={16}/> 匯出總表 (Excel)</button>
-                                </header>
+                                <header className="flex justify-between items-center"><h2 className="text-2xl font-bold">營運儀表板</h2><button onClick={()=>downloadCSV(csvInput, 'full_export.csv')} className="text-sm bg-slate-800 text-white px-4 py-2 rounded-lg flex items-center gap-2"><Icon name="download" size={16}/> 匯出總表 (Excel)</button></header>
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-blue-100 relative overflow-hidden">
-                                        <div className="absolute -right-4 -top-4 text-blue-50 opacity-50"><Icon name="trending-up" size={100}/></div>
-                                        <div className="relative">
-                                            <div className="text-sm font-bold text-blue-600 mb-1 uppercase tracking-wider">本月營收</div>
-                                            <div className="text-4xl font-bold text-slate-800">${dashboardData.currentMonthRev.toLocaleString()}</div>
-                                        </div>
-                                    </div>
-                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-indigo-100 relative overflow-hidden">
-                                        <div className="absolute -right-4 -top-4 text-indigo-50 opacity-50"><Icon name="users" size={100}/></div>
-                                        <div className="relative">
-                                            <div className="text-sm font-bold text-indigo-600 mb-1 uppercase tracking-wider">本月人次</div>
-                                            <div className="text-4xl font-bold text-slate-800">{dashboardData.currentMonthPax} <span className="text-lg font-normal text-slate-400">人</span></div>
-                                        </div>
-                                    </div>
-                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-                                        <div className="text-sm font-medium text-slate-500 mb-4">歷史總營收</div>
-                                        <div className="text-2xl font-bold text-slate-700">${stats.totalRev.toLocaleString()}</div>
-                                    </div>
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-blue-100 relative overflow-hidden"><div className="absolute -right-4 -top-4 text-blue-50 opacity-50"><Icon name="trending-up" size={100}/></div><div className="relative"><div className="text-sm font-bold text-blue-600 mb-1 uppercase tracking-wider">本月營收</div><div className="text-4xl font-bold text-slate-800">${dashboardData.currentMonthRev.toLocaleString()}</div></div></div>
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-indigo-100 relative overflow-hidden"><div className="absolute -right-4 -top-4 text-indigo-50 opacity-50"><Icon name="users" size={100}/></div><div className="relative"><div className="text-sm font-bold text-indigo-600 mb-1 uppercase tracking-wider">本月人次</div><div className="text-4xl font-bold text-slate-800">{dashboardData.currentMonthPax} <span className="text-lg font-normal text-slate-400">人</span></div></div></div>
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100"><div className="text-sm font-medium text-slate-500 mb-4">歷史總營收</div><div className="text-2xl font-bold text-slate-700">${stats.totalRev.toLocaleString()}</div></div>
                                 </div>
-
-                                <div>
-                                    <h3 className="text-lg font-bold text-slate-700 mb-4">月度營運報表</h3>
-                                    {Object.entries(dashboardData.monthlyGroups).sort((a,b)=>b[0].localeCompare(a[0])).map(([month, data]) => (
-                                        <MonthlyReport key={month} month={month} data={data} />
-                                    ))}
-                                </div>
+                                <div><h3 className="text-lg font-bold text-slate-700 mb-4">月度營運報表</h3>{Object.entries(dashboardData.monthlyGroups).sort((a,b)=>b[0].localeCompare(a[0])).map(([month, data]) => (<MonthlyReport key={month} month={month} data={data} />))}</div>
                             </div>
                         )}
 
@@ -793,18 +798,7 @@
                                             </div>
 
                                             <h4 className="font-bold text-slate-700 mb-4">消費歷史 ({customerProfile.history.length})</h4>
-                                            <div className="space-y-2">
-                                                {customerProfile.history.map((h,i) => (
-                                                    <div key={i} className="flex justify-between items-center p-4 border border-slate-100 rounded-xl hover:bg-slate-50 transition">
-                                                        <div>
-                                                            <div className="font-bold text-slate-700">{h.eventName}</div>
-                                                            <div className="text-xs text-slate-400 mt-1">{h.date} • {h.instructor}</div>
-                                                            {h.orderDate && <div className="text-xs text-blue-500 mt-0.5">📅 下定於: {h.orderDate}</div>}
-                                                        </div>
-                                                        <div className="font-mono font-bold text-slate-600">${h.price}</div>
-                                                    </div>
-                                                ))}
-                                            </div>
+                                            <div className="space-y-2">{customerProfile.history.map((h,i) => (<div key={i} className="flex justify-between items-center p-4 border border-slate-100 rounded-xl hover:bg-slate-50 transition"><div><div className="font-bold text-slate-700">{h.eventName}</div><div className="text-xs text-slate-400 mt-1">{h.date} • {h.instructor}</div>{h.orderDate && <div className="text-xs text-blue-500 mt-0.5">📅 下定於: {h.orderDate}</div>}</div><div className="font-mono font-bold text-slate-600">${h.price}</div></div>))}</div>
                                         </div>
                                     ) : (
                                         <div className="text-center py-12 text-slate-400">請搜尋或選擇一位客戶以查看詳細分析</div>
@@ -813,6 +807,7 @@
                             </div>
                         )}
 
+                        {/* [修改] 資料庫管理: 新增列表式編輯與精靈 */}
                         {activeTab === 'import' && (
                             <div className="fade-in max-w-6xl mx-auto space-y-8">
                                 <header className="flex justify-between items-center">
@@ -856,15 +851,65 @@
                                     </div>
                                 </div>
 
-                                {/* Data Rescue */}
-                                <DataRescueTab currentAppId={dbSource} onSwitch={setDbSource} />
+                                {/* [修改] 新增報名資料 Form (加入 phone) */}
+                                <section>
+                                    <h2 className="text-2xl font-bold mb-6">新增報名資料</h2>
+                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div><label className="block text-xs font-bold text-slate-500 mb-1">日期 *</label><input type="date" className="w-full p-2 border rounded-lg" value={newReg.date} onChange={e=>setNewReg({...newReg, date: e.target.value})} /></div>
+                                            <div><label className="block text-xs font-bold text-slate-500 mb-1">活動名稱 *</label><input type="text" className="w-full p-2 border rounded-lg" placeholder="例如: 登山團" value={newReg.eventName} onChange={e=>setNewReg({...newReg, eventName: e.target.value})} /></div>
+                                            <div><label className="block text-xs font-bold text-slate-500 mb-1">講師</label><input type="text" className="w-full p-2 border rounded-lg" placeholder="講師姓名" value={newReg.instructor} onChange={e=>setNewReg({...newReg, instructor: e.target.value})} /></div>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div><label className="block text-xs font-bold text-slate-500 mb-1">客戶姓名 *</label><input type="text" className="w-full p-2 border rounded-lg" placeholder="王小明" value={newReg.customerName} onChange={e=>setNewReg({...newReg, customerName: e.target.value})} /></div>
+                                            <div><label className="block text-xs font-bold text-slate-500 mb-1">金額</label><input type="number" className="w-full p-2 border rounded-lg" placeholder="3000" value={newReg.price} onChange={e=>setNewReg({...newReg, price: e.target.value})} /></div>
+                                            <div><label className="block text-xs font-bold text-slate-500 mb-1">交通方式</label>
+                                                <select className="w-full p-2 border rounded-lg" value={newReg.transport} onChange={e=>setNewReg({...newReg, transport: e.target.value})}>
+                                                    <option value="">未定</option>
+                                                    <option value="共乘">共乘</option>
+                                                    <option value="自行前往">自行前往</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                            <div><label className="block text-xs font-bold text-slate-500 mb-1">訂購日</label><input type="date" className="w-full p-2 border rounded-lg" value={newReg.orderDate} onChange={e=>setNewReg({...newReg, orderDate: e.target.value})} /></div>
+                                            <div><label className="block text-xs font-bold text-slate-500 mb-1">報名管道</label><input type="text" className="w-full p-2 border rounded-lg" placeholder="FB, IG..." value={newReg.source} onChange={e=>setNewReg({...newReg, source: e.target.value})} /></div>
+                                            <div><label className="block text-xs font-bold text-slate-500 mb-1">手機</label><input type="text" className="w-full p-2 border rounded-lg" placeholder="09xx..." value={newReg.phone} onChange={e=>setNewReg({...newReg, phone: e.target.value})} /></div>
+                                        </div>
+                                        <div className="flex justify-end pt-2">
+                                            <button onClick={handleAddManualReg} disabled={isSaving} className={`bg-blue-600 text-white px-6 py-2 rounded-lg flex items-center gap-2 transition-colors ${addRegStatus==='success'?'bg-green-600 hover:bg-green-700':'hover:bg-blue-700'}`}>
+                                                {isSaving ? <Icon name="loader-2" className="animate-spin"/> : (addRegStatus==='success' ? <Icon name="check"/> : <Icon name="plus"/>)}
+                                                {addRegStatus==='success' ? '新增成功！' : '新增一筆報名'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </section>
 
                                 {/* 原始 CSV (折疊) */}
                                 <details className="group">
-                                    <summary className="flex items-center gap-2 cursor-pointer text-slate-500 font-bold hover:text-slate-700"><Icon name="code" size={16}/> 進階：原始 CSV 資料</summary>
+                                    <summary className="flex items-center gap-2 cursor-pointer text-slate-500 font-bold hover:text-slate-700"><Icon name="code" size={16}/> 進階：原始 CSV 資料庫 (全量編輯)</summary>
                                     <div className="mt-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                                        <textarea className="w-full h-64 p-4 font-mono text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none" value={csvInput} onChange={e=>setCsvInput(e.target.value)} />
-                                        <div className="mt-4 flex justify-end">
+                                        <textarea className="w-full h-96 p-4 font-mono text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none" value={csvInput} onChange={e=>setCsvInput(e.target.value)} />
+                                        <div className="mt-4 flex justify-between items-center">
+                                            {/* 管理員密碼設定區塊 */}
+                                            <div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                                                <Icon name="lock" size={16} className="text-slate-400"/>
+                                                <span className="text-xs font-bold text-slate-600">管理員安全設定</span>
+                                                <input 
+                                                    type="password" 
+                                                    placeholder="輸入新密碼..." 
+                                                    className="px-2 py-1 border rounded text-xs w-32 outline-none focus:border-blue-400" 
+                                                    value={newPasswordInput} 
+                                                    onChange={e=>setNewPasswordInput(e.target.value)} 
+                                                />
+                                                <button 
+                                                    onClick={handleUpdatePassword} 
+                                                    className={`text-xs text-white px-3 py-1 rounded transition-colors ${passwordSaveStatus==='success' ? 'bg-green-500' : 'bg-slate-600 hover:bg-slate-700'}`}
+                                                >
+                                                    {passwordSaveStatus==='success' ? '已更新' : (passwordSaveStatus==='saving' ? '...' : '更新密碼')}
+                                                </button>
+                                            </div>
+
                                             <button onClick={() => handleSaveCSV(csvInput)} disabled={isSaving} className="bg-slate-800 text-white px-6 py-2 rounded-xl flex items-center gap-2 hover:bg-slate-900">
                                                 {isSaving ? <Icon name="loader-2" className="animate-spin"/> : <Icon name="save"/>} <span>儲存變更</span>
                                             </button>
@@ -877,13 +922,14 @@
                     </main>
 
                     {/* Modals */}
+                    {showDebug && <DebugPanel onClose={()=>setShowDebug(false)} />}
                     {showCreateEvent && <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 fade-in"><div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl"><CreateEventModal onClose={()=>setShowCreateEvent(false)} onSave={handleCreateEvent} customTemplates={customTemplates} onSaveTemplate={handleSaveTemplate} onDeleteTemplate={onDeleteTemplate} availableInstructors={Object.keys(stats.instrs).sort()} instructorSchedule={instructorSchedule} /></div></div>}
                     {showAddPromise && <AddPromiseModal onClose={()=>setShowAddPromise(false)} onSave={handleAddPromise} />}
                     {showBulkImport && <BulkImportModal onClose={()=>setShowBulkImport(false)} onImport={handleBulkImport} existingData={parsedData} />}
                     {showScheduleModal && <InstructorScheduleModal date={scheduleDate} availableInstructors={Object.keys(stats.instrs).sort()} restingList={instructorSchedule[scheduleDate] || []} onClose={()=>setShowScheduleModal(false)} onToggle={handleToggleInstructorRest} />}
                     {activeTaskDetail && <TaskDetailModal task={activeTaskDetail} eventData={activeTaskDetail.fullEvent} onClose={()=>setActiveTaskDetail(null)} />}
                     {editingEvent && <EventManagerModal 
-                        event={activeEditingEvent} // 使用最新的 event 資料，解決 Checkbox 狀態不同步問題
+                        event={activeEditingEvent} 
                         config={eventConfigs[editingEvent.key]} 
                         onClose={()=>setEditingEvent(null)} 
                         onSaveConfig={(cfg, newInstr)=>handleSaveEventConfig(editingEvent.key, cfg, newInstr)} 
@@ -892,6 +938,7 @@
                         onCheckInToggle={handleCheckInToggle} 
                     />}
                     {editingRow && <EditRowModal rowData={editingRow} onClose={()=>setEditingRow(null)} onSave={handleUpdateRow} />}
+                    {showLoginModal && <LoginModal onClose={()=>setShowLoginModal(false)} onLogin={handleVerifyLogin} />}
                 </div>
             );
         };
