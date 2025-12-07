@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>SuperOps - 全方位營運管理系統 (旗艦版)</title>
+    <title>TPHA 台北城市狩獵活動行程表</title>
     
     <!-- 1. 載入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -369,7 +369,8 @@
         };
         // EventManagerModal with Status Rules Editor
         // [修改] 接收 globalRules 參數
-        const EventManagerModal = ({ event, config, onClose, onSaveConfig, availableInstructors, instructorSchedule, onCheckInToggle, onDeleteEvent, globalRules }) => {
+        // [修改] 活動管理視窗：增加 onEditCustomer 參數，並在名單右側加入編輯按鈕
+        const EventManagerModal = ({ event, config, onClose, onSaveConfig, availableInstructors, instructorSchedule, onCheckInToggle, onDeleteEvent, globalRules, onEditCustomer }) => {
             const [capacity, setCapacity] = useState(config?.capacity || 20);
             const [eventNote, setEventNote] = useState(config?.note || '');
             const [eventTime, setEventTime] = useState(config?.time || '');
@@ -378,7 +379,6 @@
             const [tasks, setTasks] = useState(config?.tasks || JSON.parse(JSON.stringify(DEFAULT_TASKS_TEMPLATE)));
             const [instructors, setInstructors] = useState(event.instructor ? event.instructor.split(/[&,]/).map(s=>s.trim()) : []);
             const [tempInstructor, setTempInstructor] = useState('');
-            // [修改] 預設值優先使用 config -> globalRules -> DEFAULT
             const [statusRules, setStatusRules] = useState(config?.statusRules || globalRules || DEFAULT_STATUS_RULES);
             const [newRule, setNewRule] = useState({ min: 0, max: 10, label: '', color: 'blue' });
 
@@ -414,16 +414,79 @@
             const progress = Math.round((tasks.filter(t => t.completed).length / Math.max(tasks.length, 1)) * 100);
 
             return (
-                <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 fade-in backdrop-blur-sm"><div className="bg-white rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh] shadow-2xl m-auto"><div className="p-6 border-b border-slate-100 flex justify-between items-center"><div><div className="text-xs text-blue-600 font-bold bg-blue-50 px-2 py-1 rounded mb-1 inline-block">{event.date}</div><h3 className="text-xl font-bold text-slate-800">{event.eventName}</h3></div><button onClick={onClose}><Icon name="x" className="text-slate-400 hover:text-slate-600"/></button></div><div className="p-6 overflow-y-auto space-y-6"><section><h4 className="font-bold text-slate-700 mb-2 flex items-center"><Icon name="user" size={18} className="mr-2"/> 帶團講師</h4><div className="bg-slate-50 p-3 rounded-xl border border-slate-200"><div className="flex flex-wrap gap-2 mb-2">{instructors.map(ins=><div key={ins} className="flex items-center bg-white text-blue-700 px-2 py-1 rounded-md text-sm border border-blue-100 shadow-sm"><span className="mr-1">{ins}</span><button onClick={()=>removeInstructor(ins)}><Icon name="x" size={14} className="text-slate-400 hover:text-red-500"/></button></div>)}{instructors.length===0 && <span className="text-xs text-slate-400 py-1">未指定講師</span>}</div><div className="flex gap-2 mb-2"><input type="text" className="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" value={tempInstructor} onChange={e=>setTempInstructor(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addInstructor(tempInstructor)} placeholder="輸入名字..."/><button onClick={()=>addInstructor(tempInstructor)} className="px-3 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200"><Icon name="plus" size={16}/></button></div><div className="flex flex-wrap gap-2">{availableInstructors.slice(0,5).map(i=><button key={i} onClick={()=>addInstructor(i)} className="text-xs px-2 py-1 bg-white border rounded-full hover:bg-blue-50 text-slate-600">+ {i}</button>)}</div></div></section><section><div className="flex justify-between items-center mb-3"><h4 className="font-bold text-slate-700 flex items-center"><Icon name="users" size={18} className="mr-2"/> 報名名單 ({checkedInCount}/{event.count})</h4><div className="flex gap-2"><button onClick={handleExportList} className="text-xs bg-slate-800 text-white px-2 py-1 rounded hover:bg-slate-700 flex items-center"><Icon name="download" size={12} className="mr-1"/> 匯出</button><span className="text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-full flex items-center">共乘: {carpoolCount}</span></div></div><div className="bg-slate-50 p-3 rounded-xl border border-slate-200 max-h-60 overflow-y-auto">{sortedCustomers.length > 0 ? (<ul className="space-y-2">{sortedCustomers.map((c, i) => (<li key={i} className={`flex justify-between items-center text-sm p-2 rounded-lg ${c.transport === '共乘' ? 'bg-white border border-orange-100 shadow-sm' : 'border-b border-slate-100'}`}><div className="flex items-center gap-3"><button onClick={(e)=>{e.stopPropagation(); onCheckInToggle(c.id, c.isCheckedIn);}} className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${c.isCheckedIn ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-slate-300 text-transparent hover:border-blue-400'}`}><Icon name="check" size={14} /></button><div className="flex flex-col"><span className={`font-medium ${c.isCheckedIn ? 'text-green-700' : 'text-slate-700'}`}>{c.customerName}</span><span className="text-[10px] text-slate-400">{c.phone || '無手機'}</span></div></div><div className="flex items-center gap-2"><div className="flex flex-col items-end">{c.transport === '共乘' && <span className="text-[10px] text-orange-500 flex items-center mb-0.5"><Icon name="car" size={10} className="mr-0.5"/> 共乘</span>}<span className="text-xs text-slate-400">{c.source || '-'}</span></div>{c.isCheckedIn && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded">已報到</span>}</div></li>))}</ul>) : <div className="text-slate-400 text-center text-sm py-2">目前尚無報名</div>}</div></section><section><h4 className="font-bold text-slate-700 mb-3 flex items-center"><Icon name="settings" size={18} className="mr-2"/> 活動設定</h4><div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4"><div className="grid grid-cols-2 gap-4"><div><span className="text-slate-500 text-xs font-bold mb-1 block">活動時間</span><input type="time" value={eventTime} onChange={e=>setEventTime(e.target.value)} className="w-full px-2 py-1.5 text-center border border-slate-300 rounded-lg font-bold outline-none focus:ring-2 focus:ring-blue-500 bg-white"/></div><div><span className="text-slate-500 text-xs font-bold mb-1 block">人數上限</span><input type="number" value={capacity} onChange={e=>setCapacity(e.target.value)} className="w-full px-2 py-1.5 text-center border border-slate-300 rounded-lg font-bold outline-none focus:ring-2 focus:ring-blue-500 bg-white"/></div></div><div><label className="text-xs font-bold text-slate-500 mb-1 block">前台顯示名稱</label><input type="text" className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" placeholder="例如: 冬季夜訪蛙類" value={displayName} onChange={e=>setDisplayName(e.target.value)} /></div><div className="bg-white border border-slate-200 rounded-lg p-3"><label className="text-xs font-bold text-slate-500 mb-2 block flex justify-between"><span>自定義狀態規則 (依照人數顯示)</span><span className="text-[10px] bg-slate-100 px-1 rounded font-normal">從上到下匹配</span></label><div className="space-y-2 mb-3">{statusRules.map((rule, idx) => (<div key={idx} className="flex items-center gap-2 text-xs"><span className="w-12 text-center bg-slate-100 rounded py-1">{rule.min}-{rule.max}人</span><span className={`flex-1 px-2 py-1 rounded border text-center ${COLOR_OPTIONS.find(c=>c.value===rule.color)?.bg} ${COLOR_OPTIONS.find(c=>c.value===rule.color)?.text}`}>{rule.label}</span><button onClick={()=>removeStatusRule(idx)} className="text-slate-400 hover:text-red-500"><Icon name="trash-2" size={14}/></button></div>))}</div><div className="grid grid-cols-4 gap-2 items-end bg-slate-50 p-2 rounded border border-slate-100"><div><span className="text-[10px] text-slate-400">Min</span><input type="number" className="w-full p-1 text-xs border rounded" value={newRule.min} onChange={e=>setNewRule({...newRule, min: e.target.value})}/></div><div><span className="text-[10px] text-slate-400">Max</span><input type="number" className="w-full p-1 text-xs border rounded" value={newRule.max} onChange={e=>setNewRule({...newRule, max: e.target.value})}/></div><div className="col-span-2"><span className="text-[10px] text-slate-400">顯示文字</span><input type="text" className="w-full p-1 text-xs border rounded" placeholder="如: 報名中" value={newRule.label} onChange={e=>setNewRule({...newRule, label: e.target.value})}/></div><div className="col-span-2"><span className="text-[10px] text-slate-400">顏色</span><select className="w-full p-1 text-xs border rounded" value={newRule.color} onChange={e=>setNewRule({...newRule, color: e.target.value})}>{COLOR_OPTIONS.map(c=><option key={c.value} value={c.value}>{c.label}</option>)}</select></div><div className="col-span-2"><button onClick={addStatusRule} className="w-full py-1 bg-slate-800 text-white text-xs rounded hover:bg-slate-700">新增規則</button></div></div></div><div><label className="text-xs font-bold text-slate-500 mb-1 block">活動報名連結</label><input type="text" className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" placeholder="https://..." value={eventLink} onChange={e=>setEventLink(e.target.value)} /></div><div><label className="text-xs font-bold text-slate-500 mb-1 block">活動專屬備註</label><textarea className="w-full p-2 border border-slate-300 rounded-lg text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 outline-none" placeholder="例如: 記得帶無線電..." value={eventNote} onChange={e=>setEventNote(e.target.value)}></textarea></div></div></section><section><div className="flex justify-between items-center mb-2"><h4 className="font-bold text-slate-700 flex items-center"><Icon name="check-square" size={18} className="mr-2"/> 執行任務</h4><button onClick={handleAddTask} className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 flex items-center"><Icon name="plus" size={14} className="mr-1"/> 新增</button></div><div className="w-full h-1.5 bg-slate-100 rounded-full mb-4 overflow-hidden"><div className="h-full bg-green-500 transition-all duration-500" style={{width: `${progress}%`}}></div></div><div className="space-y-2">{tasks.map((t, i) => (<div key={i} className="flex items-center justify-between p-2.5 border border-slate-200 rounded-lg hover:bg-slate-50 group"><div className="flex items-center gap-3 cursor-pointer" onClick={()=>handleTaskToggle(i)}><div className={`w-4 h-4 rounded border flex items-center justify-center ${t.completed ? 'bg-green-500 border-green-500 text-white' : 'border-slate-300'}`}>{t.completed && <Icon name="check" size={12}/>}</div><span className={`text-sm ${t.completed ? 'text-slate-400 line-through' : 'text-slate-700 font-medium'}`}>{t.name}</span></div><button onClick={()=>handleDeleteTask(i)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Icon name="trash-2" size={14}/></button></div>))}</div></section></div>
-                <div className="p-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl flex justify-between items-center">
-                    <button onClick={onDeleteEvent} className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-1 font-bold text-sm">
-                        <Icon name="trash-2" size={16}/> 刪除此活動
-                    </button>
-                    <div className="flex gap-2">
-                        <button onClick={onClose} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg">取消</button>
-                        <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-md">儲存設定</button>
+                <div className="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 fade-in backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh] shadow-2xl m-auto">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                            <div><div className="text-xs text-blue-600 font-bold bg-blue-50 px-2 py-1 rounded mb-1 inline-block">{event.date}</div><h3 className="text-xl font-bold text-slate-800">{event.eventName}</h3></div><button onClick={onClose}><Icon name="x" className="text-slate-400 hover:text-slate-600"/></button>
+                        </div>
+                        <div className="p-6 overflow-y-auto space-y-6">
+                            <section>
+                                <h4 className="font-bold text-slate-700 mb-2 flex items-center"><Icon name="user" size={18} className="mr-2"/> 帶團講師</h4>
+                                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                                    <div className="flex flex-wrap gap-2 mb-2">{instructors.map(ins=><div key={ins} className="flex items-center bg-white text-blue-700 px-2 py-1 rounded-md text-sm border border-blue-100 shadow-sm"><span className="mr-1">{ins}</span><button onClick={()=>removeInstructor(ins)}><Icon name="x" size={14} className="text-slate-400 hover:text-red-500"/></button></div>)}{instructors.length===0 && <span className="text-xs text-slate-400 py-1">未指定講師</span>}</div>
+                                    <div className="flex gap-2 mb-2"><input type="text" className="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500" value={tempInstructor} onChange={e=>setTempInstructor(e.target.value)} onKeyDown={e=>e.key==='Enter'&&addInstructor(tempInstructor)} placeholder="輸入名字..."/><button onClick={()=>addInstructor(tempInstructor)} className="px-3 bg-blue-100 text-blue-600 rounded-lg hover:bg-blue-200"><Icon name="plus" size={16}/></button></div>
+                                    <div className="flex flex-wrap gap-2">{availableInstructors.slice(0,5).map(i=><button key={i} onClick={()=>addInstructor(i)} className="text-xs px-2 py-1 bg-white border rounded-full hover:bg-blue-50 text-slate-600">+ {i}</button>)}</div>
+                                </div>
+                            </section>
+                            <section>
+                                <div className="flex justify-between items-center mb-3">
+                                    <h4 className="font-bold text-slate-700 flex items-center"><Icon name="users" size={18} className="mr-2"/> 報名名單 ({checkedInCount}/{event.count})</h4>
+                                    <div className="flex gap-2"><button onClick={handleExportList} className="text-xs bg-slate-800 text-white px-2 py-1 rounded hover:bg-slate-700 flex items-center"><Icon name="download" size={12} className="mr-1"/> 匯出</button><span className="text-xs font-bold text-orange-600 bg-orange-50 px-2 py-1 rounded-full flex items-center">共乘: {carpoolCount}</span></div>
+                                </div>
+                                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 max-h-60 overflow-y-auto">
+                                    {sortedCustomers.length > 0 ? (
+                                        <ul className="space-y-2">
+                                            {sortedCustomers.map((c, i) => (
+                                                <li key={i} className={`flex justify-between items-center text-sm p-2 rounded-lg ${c.transport === '共乘' ? 'bg-white border border-orange-100 shadow-sm' : 'border-b border-slate-100'}`}>
+                                                    <div className="flex items-center gap-3">
+                                                        <button onClick={(e)=>{e.stopPropagation(); onCheckInToggle(c.id, c.isCheckedIn);}} className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${c.isCheckedIn ? 'bg-green-500 border-green-500 text-white' : 'bg-white border-slate-300 text-transparent hover:border-blue-400'}`}><Icon name="check" size={14} /></button>
+                                                        <div className="flex flex-col"><span className={`font-medium ${c.isCheckedIn ? 'text-green-700' : 'text-slate-700'}`}>{c.customerName}</span><span className="text-[10px] text-slate-400">{c.phone || '無手機'}</span></div>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="flex flex-col items-end">
+                                                            {c.transport === '共乘' && <span className="text-[10px] text-orange-500 flex items-center mb-0.5"><Icon name="car" size={10} className="mr-0.5"/> 共乘</span>}
+                                                            <span className="text-xs text-slate-400">{c.source || '-'}</span>
+                                                        </div>
+                                                        {c.isCheckedIn && <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded">已報到</span>}
+                                                        {/* [新增] 編輯按鈕 */}
+                                                        <button onClick={(e)=>{e.stopPropagation(); onEditCustomer(c);}} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors ml-1">
+                                                            <Icon name="edit-2" size={14} />
+                                                        </button>
+                                                    </div>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    ) : <div className="text-slate-400 text-center text-sm py-2">目前尚無報名</div>}
+                                </div>
+                            </section>
+                            <section>
+                                <h4 className="font-bold text-slate-700 mb-3 flex items-center"><Icon name="settings" size={18} className="mr-2"/> 活動設定</h4>
+                                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
+                                    <div className="grid grid-cols-2 gap-4"><div><span className="text-slate-500 text-xs font-bold mb-1 block">活動時間</span><input type="time" value={eventTime} onChange={e=>setEventTime(e.target.value)} className="w-full px-2 py-1.5 text-center border border-slate-300 rounded-lg font-bold outline-none focus:ring-2 focus:ring-blue-500 bg-white"/></div><div><span className="text-slate-500 text-xs font-bold mb-1 block">人數上限</span><input type="number" value={capacity} onChange={e=>setCapacity(e.target.value)} className="w-full px-2 py-1.5 text-center border border-slate-300 rounded-lg font-bold outline-none focus:ring-2 focus:ring-blue-500 bg-white"/></div></div>
+                                    <div><label className="text-xs font-bold text-slate-500 mb-1 block">前台顯示名稱</label><input type="text" className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" placeholder="例如: 冬季夜訪蛙類" value={displayName} onChange={e=>setDisplayName(e.target.value)} /></div>
+                                    <div className="bg-white border border-slate-200 rounded-lg p-3"><label className="text-xs font-bold text-slate-500 mb-2 block flex justify-between"><span>自定義狀態規則 (依照人數顯示)</span><span className="text-[10px] bg-slate-100 px-1 rounded font-normal">從上到下匹配</span></label><div className="space-y-2 mb-3">{statusRules.map((rule, idx) => (<div key={idx} className="flex items-center gap-2 text-xs"><span className="w-12 text-center bg-slate-100 rounded py-1">{rule.min}-{rule.max}人</span><span className={`flex-1 px-2 py-1 rounded border text-center ${COLOR_OPTIONS.find(c=>c.value===rule.color)?.bg} ${COLOR_OPTIONS.find(c=>c.value===rule.color)?.text}`}>{rule.label}</span><button onClick={()=>removeStatusRule(idx)} className="text-slate-400 hover:text-red-500"><Icon name="trash-2" size={14}/></button></div>))}</div><div className="grid grid-cols-4 gap-2 items-end bg-slate-50 p-2 rounded border border-slate-100"><div><span className="text-[10px] text-slate-400">Min</span><input type="number" className="w-full p-1 text-xs border rounded" value={newRule.min} onChange={e=>setNewRule({...newRule, min: e.target.value})}/></div><div><span className="text-[10px] text-slate-400">Max</span><input type="number" className="w-full p-1 text-xs border rounded" value={newRule.max} onChange={e=>setNewRule({...newRule, max: e.target.value})}/></div><div className="col-span-2"><span className="text-[10px] text-slate-400">顯示文字</span><input type="text" className="w-full p-1 text-xs border rounded" placeholder="如: 報名中" value={newRule.label} onChange={e=>setNewRule({...newRule, label: e.target.value})}/></div><div className="col-span-2"><span className="text-[10px] text-slate-400">顏色</span><select className="w-full p-1 text-xs border rounded" value={newRule.color} onChange={e=>setNewRule({...newRule, color: e.target.value})}>{COLOR_OPTIONS.map(c=><option key={c.value} value={c.value}>{c.label}</option>)}</select></div><div className="col-span-2"><button onClick={addStatusRule} className="w-full py-1 bg-slate-800 text-white text-xs rounded hover:bg-slate-700">新增規則</button></div></div></div>
+                                    <div><label className="text-xs font-bold text-slate-500 mb-1 block">活動報名連結</label><input type="text" className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" placeholder="https://..." value={eventLink} onChange={e=>setEventLink(e.target.value)} /></div>
+                                    <div><label className="text-xs font-bold text-slate-500 mb-1 block">活動專屬備註</label><textarea className="w-full p-2 border border-slate-300 rounded-lg text-sm h-20 resize-none focus:ring-2 focus:ring-blue-500 outline-none" placeholder="例如: 記得帶無線電..." value={eventNote} onChange={e=>setEventNote(e.target.value)}></textarea></div>
+                                </div>
+                            </section>
+                            <section>
+                                <div className="flex justify-between items-center mb-2"><h4 className="font-bold text-slate-700 flex items-center"><Icon name="check-square" size={18} className="mr-2"/> 執行任務</h4><button onClick={handleAddTask} className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 flex items-center"><Icon name="plus" size={14} className="mr-1"/> 新增</button></div>
+                                <div className="w-full h-1.5 bg-slate-100 rounded-full mb-4 overflow-hidden"><div className="h-full bg-green-500 transition-all duration-500" style={{width: `${progress}%`}}></div></div>
+                                <div className="space-y-2">{tasks.map((t, i) => (<div key={i} className="flex items-center justify-between p-2.5 border border-slate-200 rounded-lg hover:bg-slate-50 group"><div className="flex items-center gap-3 cursor-pointer" onClick={()=>handleTaskToggle(i)}><div className={`w-4 h-4 rounded border flex items-center justify-center ${t.completed ? 'bg-green-500 border-green-500 text-white' : 'border-slate-300'}`}>{t.completed && <Icon name="check" size={12}/>}</div><span className={`text-sm ${t.completed ? 'text-slate-400 line-through' : 'text-slate-700 font-medium'}`}>{t.name}</span></div><button onClick={()=>handleDeleteTask(i)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"><Icon name="trash-2" size={14}/></button></div>))}</div>
+                            </section>
+                        </div>
+                        <div className="p-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl flex justify-between items-center">
+                            <button onClick={onDeleteEvent} className="px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-1 font-bold text-sm">
+                                <Icon name="trash-2" size={16}/> 刪除此活動
+                            </button>
+                            <div className="flex gap-2">
+                                <button onClick={onClose} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg">取消</button>
+                                <button onClick={handleSave} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-md">儲存設定</button>
+                            </div>
+                        </div>
                     </div>
-                </div></div></div>);
+                </div>
+            );
         };
         
         // CreateEventModal 
@@ -450,7 +513,103 @@
 
         const TaskDetailModal = ({ task, eventData, onClose }) => { return <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 fade-in backdrop-blur-sm"><div className="bg-white rounded-2xl w-full max-w-lg flex flex-col max-h-[90vh] shadow-2xl"><div className="p-6 border-b flex justify-between items-center"><div><div className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded inline-block mb-1">{eventData.date}</div><h3 className="text-xl font-bold">{task.name}</h3></div><button onClick={onClose}><Icon name="x"/></button></div><div className="p-6 overflow-y-auto"><div className="text-center text-slate-500 py-8">任務詳細內容功能區 (可在此擴充)</div></div></div></div>; };
         const MonthlyReport = ({ month, data }) => { const [expanded, setExpanded] = useState(false); const stats = useMemo(() => { const rev = data.reduce((a,c)=>a+c.price,0); const pax = data.length; const sources = {}; const activities = {}; data.forEach(c => { sources[c.source || '未知'] = (sources[c.source || '未知'] || 0) + 1; if (!activities[c.eventName]) { activities[c.eventName] = { count: 0, revenue: 0, dates: new Set() }; } activities[c.eventName].count += 1; activities[c.eventName].revenue += c.price; if (c.date) activities[c.eventName].dates.add(c.date + c.instructor); }); return { rev, pax, sources, activities }; }, [data]); return ( <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-4 transition-all"> <div className="p-4 flex justify-between items-center cursor-pointer hover:bg-slate-50" onClick={()=>setExpanded(!expanded)}> <div className="flex items-center gap-4"> <div className="text-lg font-bold text-slate-700">{month}</div> <div className="text-sm text-slate-500 bg-slate-100 px-2 py-0.5 rounded">總收 ${stats.rev.toLocaleString()}</div> <div className="text-sm text-slate-500">({stats.pax} 人)</div> </div> <Icon name={expanded ? 'chevron-up' : 'chevron-down'} className="text-slate-400"/> </div> {expanded && ( <div className="p-4 border-t border-slate-100 bg-slate-50/50 animate-in fade-in space-y-6"> <div> <h5 className="text-xs font-bold text-slate-500 mb-3 uppercase flex items-center"><Icon name="activity" size={14} className="mr-1"/> 各項活動表現</h5> <div className="bg-white border border-slate-200 rounded-xl overflow-hidden"> <table className="w-full text-left text-sm"> <thead className="bg-slate-50 border-b border-slate-100 text-slate-500"><tr><th className="px-4 py-2">活動名稱</th><th className="px-4 py-2">場次</th><th className="px-4 py-2">人數</th><th className="px-4 py-2">平均人數</th><th className="px-4 py-2 text-right">營收</th></tr></thead> <tbody className="divide-y divide-slate-100"> {Object.entries(stats.activities).map(([name, s], i) => { const sessionCount = s.dates.size || 1; return (<tr key={i} className="hover:bg-slate-50"><td className="px-4 py-2 font-medium text-slate-700">{name}</td><td className="px-4 py-2 text-slate-500">{sessionCount}</td><td className="px-4 py-2 text-slate-500">{s.count}</td><td className="px-4 py-2 text-slate-500">{(s.count / sessionCount).toFixed(1)}</td><td className="px-4 py-2 text-right font-mono text-slate-600">${s.revenue.toLocaleString()}</td></tr>); })} </tbody> </table> </div> </div> <div> <h5 className="text-xs font-bold text-slate-500 mb-2 uppercase flex items-center"><Icon name="share-2" size={14} className="mr-1"/> 報名管道分析</h5> <div className="flex flex-wrap gap-2">{Object.entries(stats.sources).map(([src, count]) => (<div key={src} className="text-xs px-3 py-1.5 bg-white border rounded-lg shadow-sm flex gap-2"><span className="text-slate-600">{src}</span><span className="font-bold text-blue-600">{count}</span><span className="text-slate-400">({Math.round(count/stats.pax*100)}%)</span></div>))}</div> </div> <div className="flex justify-end pt-2"><button onClick={(e)=>{e.stopPropagation(); downloadCSV(data.map(d=>Object.values(d).join(',')).join('\n'), `${month}_report.csv`)}} className="text-xs text-blue-600 hover:underline flex items-center bg-blue-50 px-3 py-1.5 rounded border border-blue-100"><Icon name="download" size={12} className="mr-1"/> 下載此月詳細報表</button></div> </div> )} </div> ); };
-        const EditRowModal = ({ rowData, onClose, onSave, existingTransports }) => { const [form, setForm] = useState({ ...rowData }); return (<div className="fixed inset-0 bg-black/50 z-[80] flex items-center justify-center p-4 fade-in backdrop-blur-sm"><div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl"><div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold">編輯報名資料</h3><button onClick={onClose}><Icon name="x"/></button></div><div className="space-y-4 max-h-[70vh] overflow-y-auto p-1"> <div className="grid grid-cols-2 gap-3"><div><label className="text-xs font-bold">日期</label><input type="date" className="w-full p-2 border rounded" value={form.date} onChange={e=>setForm({...form, date:e.target.value})}/></div><div><label className="text-xs font-bold">活動名稱</label><input type="text" className="w-full p-2 border rounded" value={form.eventName} onChange={e=>setForm({...form, eventName:e.target.value})}/></div></div> <div><label className="text-xs font-bold">客戶姓名</label><input type="text" className="w-full p-2 border rounded" value={form.customerName} onChange={e=>setForm({...form, customerName:e.target.value})}/></div> <div className="grid grid-cols-2 gap-3"><div><label className="text-xs font-bold">金額</label><input type="number" className="w-full p-2 border rounded" value={form.price} onChange={e=>setForm({...form, price:e.target.value})}/></div><div><label className="text-xs font-bold">交通</label><input type="text" list="transport-options" className="w-full p-2 border rounded" value={form.transport} onChange={e=>setForm({...form, transport:e.target.value})} placeholder="選擇或輸入..."/><datalist id="transport-options">{existingTransports.map(t => <option key={t} value={t} />)}</datalist></div></div> <div className="grid grid-cols-2 gap-3"><div><label className="text-xs font-bold">Email</label><input type="email" className="w-full p-2 border rounded" value={form.email||''} onChange={e=>setForm({...form, email:e.target.value})}/></div><div><label className="text-xs font-bold">手機</label><input type="text" className="w-full p-2 border rounded" value={form.phone||''} onChange={e=>setForm({...form, phone:e.target.value})}/></div></div> <div className="grid grid-cols-2 gap-3"><div><label className="text-xs font-bold">訂購日</label><input type="date" className="w-full p-2 border rounded" value={form.orderDate||''} onChange={e=>setForm({...form, orderDate:e.target.value})}/></div><div><label className="text-xs font-bold">身分證</label><input type="text" className="w-full p-2 border rounded" value={form.idNo||''} onChange={e=>setForm({...form, idNo:e.target.value})}/></div></div> <div className="grid grid-cols-2 gap-3"><div><label className="text-xs font-bold">生日</label><input type="date" className="w-full p-2 border rounded" value={form.birthday||''} onChange={e=>setForm({...form, birthday:e.target.value})}/></div><div><label className="text-xs font-bold">社群暱稱</label><input type="text" className="w-full p-2 border rounded" value={form.socialName||''} onChange={e=>setForm({...form, socialName:e.target.value})}/></div></div> <div className="grid grid-cols-2 gap-3"><div><label className="text-xs font-bold">報名管道</label><input type="text" className="w-full p-2 border rounded" value={form.source||''} onChange={e=>setForm({...form, source:e.target.value})}/></div><div><label className="text-xs font-bold">備註</label><input type="text" className="w-full p-2 border rounded" value={form.notes||''} onChange={e=>setForm({...form, notes:e.target.value})}/></div></div> </div><div className="flex justify-end mt-6 gap-2"><button onClick={onClose} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg">取消</button><button onClick={()=>onSave(form)} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">儲存變更</button></div></div></div>); };
+        // [修改] 編輯視窗：交通方式改為勾選式 (Toggle)，並保留刪除功能
+        const EditRowModal = ({ rowData, onClose, onSave, onDelete, existingTransports }) => { 
+            const [form, setForm] = useState({ ...rowData }); 
+            
+            // 切換交通方式的函式
+            const toggleTransport = () => {
+                setForm(prev => ({
+                    ...prev,
+                    transport: prev.transport === '共乘' ? '自行前往' : '共乘'
+                }));
+            };
+
+            return (
+                <div className="fixed inset-0 bg-black/50 z-[80] flex items-center justify-center p-4 fade-in backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-2xl">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-bold">編輯報名資料</h3>
+                            <button onClick={onClose}><Icon name="x"/></button>
+                        </div>
+                        
+                        <div className="space-y-4 max-h-[70vh] overflow-y-auto p-1"> 
+                            {/* 第一列：日期與活動名稱 */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div><label className="text-xs font-bold">日期</label><input type="date" className="w-full p-2 border rounded" value={form.date} onChange={e=>setForm({...form, date:e.target.value})}/></div>
+                                <div><label className="text-xs font-bold">活動名稱</label><input type="text" className="w-full p-2 border rounded" value={form.eventName} onChange={e=>setForm({...form, eventName:e.target.value})}/></div>
+                            </div> 
+                            
+                            {/* 第二列：客戶姓名 */}
+                            <div><label className="text-xs font-bold">客戶姓名</label><input type="text" className="w-full p-2 border rounded" value={form.customerName} onChange={e=>setForm({...form, customerName:e.target.value})}/></div> 
+                            
+                            {/* 第三列：金額與交通 (交通改為勾選式按鈕) */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div><label className="text-xs font-bold">金額</label><input type="number" className="w-full p-2 border rounded" value={form.price} onChange={e=>setForm({...form, price:e.target.value})}/></div>
+                                
+                                {/* [修改重點] 交通方式：改為勾選按鈕樣式 */}
+                                <div>
+                                    <label className="text-xs font-bold mb-1.5 block">交通</label>
+                                    <div 
+                                        onClick={toggleTransport}
+                                        className={`w-full p-2 border rounded cursor-pointer flex items-center gap-2 select-none transition-all ${
+                                            form.transport === '共乘' 
+                                            ? 'bg-orange-50 border-orange-300 shadow-sm' 
+                                            : 'bg-white border-slate-300 hover:bg-slate-50'
+                                        }`}
+                                    >
+                                        <div className={`w-5 h-5 rounded border flex items-center justify-center transition-all flex-shrink-0 ${
+                                            form.transport === '共乘' 
+                                            ? 'bg-orange-500 border-orange-500 text-white' 
+                                            : 'bg-white border-slate-300'
+                                        }`}>
+                                            {form.transport === '共乘' && <Icon name="check" size={14} />}
+                                        </div>
+                                        <span className={`text-sm ${form.transport === '共乘' ? 'text-orange-700 font-bold' : 'text-slate-500'}`}>
+                                            {form.transport === '共乘' ? '共乘' : '自行前往'}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div> 
+                            
+                            {/* 第四列：Email與手機 */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div><label className="text-xs font-bold">Email</label><input type="email" className="w-full p-2 border rounded" value={form.email||''} onChange={e=>setForm({...form, email:e.target.value})}/></div>
+                                <div><label className="text-xs font-bold">手機</label><input type="text" className="w-full p-2 border rounded" value={form.phone||''} onChange={e=>setForm({...form, phone:e.target.value})}/></div>
+                            </div> 
+                            
+                            {/* 第五列：訂購日與身分證 */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div><label className="text-xs font-bold">訂購日</label><input type="date" className="w-full p-2 border rounded" value={form.orderDate||''} onChange={e=>setForm({...form, orderDate:e.target.value})}/></div>
+                                <div><label className="text-xs font-bold">身分證</label><input type="text" className="w-full p-2 border rounded" value={form.idNo||''} onChange={e=>setForm({...form, idNo:e.target.value})}/></div>
+                            </div> 
+                            
+                            {/* 第六列：生日與社群暱稱 */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div><label className="text-xs font-bold">生日</label><input type="date" className="w-full p-2 border rounded" value={form.birthday||''} onChange={e=>setForm({...form, birthday:e.target.value})}/></div>
+                                <div><label className="text-xs font-bold">社群暱稱</label><input type="text" className="w-full p-2 border rounded" value={form.socialName||''} onChange={e=>setForm({...form, socialName:e.target.value})}/></div>
+                            </div> 
+                            
+                            {/* 第七列：報名管道與備註 */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div><label className="text-xs font-bold">報名管道</label><input type="text" className="w-full p-2 border rounded" value={form.source||''} onChange={e=>setForm({...form, source:e.target.value})}/></div>
+                                <div><label className="text-xs font-bold">備註</label><input type="text" className="w-full p-2 border rounded" value={form.notes||''} onChange={e=>setForm({...form, notes:e.target.value})}/></div>
+                            </div> 
+                        </div>
+                        
+                        <div className="flex justify-between mt-6 pt-4 border-t border-slate-100">
+                            <button onClick={()=>onDelete(rowData.id)} className="px-4 py-2 text-red-500 hover:bg-red-50 rounded-lg flex items-center gap-1 font-bold text-xs">
+                                <Icon name="trash-2" size={14}/> 刪除資料
+                            </button>
+                            <div className="flex gap-2">
+                                <button onClick={onClose} className="px-4 py-2 text-slate-500 hover:bg-slate-100 rounded-lg">取消</button>
+                                <button onClick={()=>onSave(form)} className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-md">儲存變更</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            ); 
+        };
         const BulkImportModal = ({ onClose, onImport, existingData }) => { return <div className="fixed inset-0 bg-black/50 z-[80] flex items-center justify-center p-4 fade-in backdrop-blur-sm"><div className="bg-white rounded-2xl w-full max-w-2xl h-[85vh] flex flex-col shadow-2xl"><div className="p-6 border-b flex justify-between items-center"><h3 className="text-xl font-bold">批量匯入功能開發中...</h3><button onClick={onClose}><Icon name="x"/></button></div><div className="p-8 text-center text-slate-500">此功能即將推出，敬請期待</div></div></div>; };
         const DataRescueTab = ({ currentAppId, onSwitch }) => { const options = [ { id: 'crm-system-v1', label: 'v1 (您的真實資料)' }, { id: 'default-app-id', label: 'Default (舊版測試)' } ]; return ( <div className="bg-white p-6 rounded-2xl shadow-sm border border-orange-200"> <div className="flex items-start gap-4"> <div className="bg-orange-100 p-3 rounded-full text-orange-600"><Icon name="life-buoy" size={24}/></div> <div className="flex-1"> <h3 className="text-xl font-bold text-slate-800 mb-2">資料庫救援控制台</h3> <p className="text-sm text-slate-500 mb-4">如果您發現資料遺失，請嘗試切換下方的資料來源。這通常發生在系統更新後。</p> <div className="grid grid-cols-1 md:grid-cols-2 gap-4"> {options.map(opt => ( <div key={opt.id} onClick={() => onSwitch(opt.id)} className={`p-4 rounded-xl border cursor-pointer transition-all flex justify-between items-center ${currentAppId === opt.id ? 'bg-orange-50 border-orange-400 ring-1 ring-orange-400' : 'hover:bg-slate-50 border-slate-200'}`} > <div> <div className="font-bold text-slate-700">{opt.label}</div> <div className="text-xs text-slate-400 font-mono">{opt.id}</div> </div> {currentAppId === opt.id && <Icon name="check-circle" className="text-orange-500" size={20}/>} </div> ))} </div> </div> </div> </div> ); };
 
@@ -1161,7 +1320,116 @@
                                 </div>
                             </div>
                         </div>}
-                        {activeTab === 'import' && <div className="fade-in max-w-6xl mx-auto space-y-8 pb-20"><header className="flex flex-col md:flex-row justify-between items-center gap-4"><h2 className="text-2xl font-bold">資料庫與報名管理</h2><div className="flex gap-2 items-center w-full md:w-auto justify-end"><div className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded">來源: {dbSource}</div><select className="text-xs p-1 border rounded" onChange={e=>handleDbSourceChange(e.target.value)} value={dbSource}><option value="crm-system-v1">v1 (您的真實資料)</option><option value="default-app-id">Default (舊版測試)</option></select><button onClick={()=>setShowGlobalRules(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700 shadow-md whitespace-nowrap"><Icon name="settings" size={18}/> 預設狀態規則</button><button onClick={()=>setShowBulkImport(true)} className="bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-green-700 shadow-md whitespace-nowrap"><Icon name="file-spreadsheet" size={18}/> 批量匯入</button></div></header><div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden table-container"><div className="p-4 border-b border-slate-100 flex gap-4 sticky left-0"><div className="relative flex-1"><Icon name="search" className="absolute left-3 top-2.5 text-slate-400" size={18}/><input type="text" placeholder="搜尋姓名、活動或日期..." className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" value={importSearch} onChange={e=>setImportSearch(e.target.value)}/></div></div><div className="max-h-[600px] overflow-y-auto"><table className="w-full text-left text-sm min-w-[800px]"><thead className="bg-slate-50 border-b border-slate-100 text-slate-500 sticky top-0"><tr><th className="p-4">日期</th><th className="p-4">活動</th><th className="p-4">客戶</th><th className="p-4">金額</th><th className="p-4 text-right">操作</th></tr></thead><tbody className="divide-y divide-slate-100">{parsedData.filter(r => !importSearch || JSON.stringify(r).toLowerCase().includes(importSearch.toLowerCase())).map((row) => (<tr key={row.id} className="hover:bg-slate-50"><td className="p-4 text-slate-600">{row.date}</td><td className="p-4 font-medium text-slate-700">{row.eventName}</td><td className="p-4">{row.customerName}</td><td className="p-4 font-mono">${row.price}</td><td className="p-4 text-right flex justify-end gap-2"><button onClick={()=>setEditingRow(row)} className="p-2 text-blue-600 hover:bg-blue-50 rounded"><Icon name="edit-2" size={16}/></button><button onClick={()=>handleDeleteRow(row.id)} className="p-2 text-red-400 hover:bg-red-50 rounded"><Icon name="trash-2" size={16}/></button></td></tr>))}</tbody></table></div></div><section><h2 className="text-2xl font-bold mb-6">新增報名資料</h2><div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4"><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><div><label className="block text-xs font-bold text-slate-500 mb-1">日期 *</label><input type="date" className="w-full p-2 border rounded-lg" value={newReg.date} onChange={e=>setNewReg({...newReg, date: e.target.value})} /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">活動名稱 *</label><input type="text" className="w-full p-2 border rounded-lg" placeholder="例如: 登山團" value={newReg.eventName} onChange={e=>setNewReg({...newReg, eventName: e.target.value})} /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">講師</label><input type="text" className="w-full p-2 border rounded-lg" placeholder="講師姓名" value={newReg.instructor} onChange={e=>setNewReg({...newReg, instructor: e.target.value})} /></div></div><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><div><label className="block text-xs font-bold text-slate-500 mb-1">客戶姓名 *</label><input type="text" className="w-full p-2 border rounded-lg" placeholder="王小明" value={newReg.customerName} onChange={e=>setNewReg({...newReg, customerName: e.target.value})} /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">金額</label><input type="number" className="w-full p-2 border rounded-lg" placeholder="3000" value={newReg.price} onChange={e=>setNewReg({...newReg, price: e.target.value})} /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">交通方式</label><select className="w-full p-2 border rounded-lg" value={newReg.transport} onChange={e=>setNewReg({...newReg, transport: e.target.value})}><option value="">未定</option><option value="共乘">共乘</option><option value="自行前往">自行前往</option></select></div></div><div className="grid grid-cols-1 md:grid-cols-3 gap-4"><div><label className="block text-xs font-bold text-slate-500 mb-1">訂購日</label><input type="date" className="w-full p-2 border rounded-lg" value={newReg.orderDate} onChange={e=>setNewReg({...newReg, orderDate: e.target.value})} /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">報名管道</label><input type="text" className="w-full p-2 border rounded-lg" placeholder="FB, IG..." value={newReg.source} onChange={e=>setNewReg({...newReg, source: e.target.value})} /></div><div><label className="block text-xs font-bold text-slate-500 mb-1">手機</label><input type="text" className="w-full p-2 border rounded-lg" placeholder="09xx..." value={newReg.phone} onChange={e=>setNewReg({...newReg, phone: e.target.value})} /></div></div><div className="flex justify-end pt-2"><button onClick={handleAddManualReg} disabled={isSaving} className={`bg-blue-600 text-white px-6 py-2 rounded-lg flex items-center gap-2 transition-colors ${addRegStatus==='success'?'bg-green-600 hover:bg-green-700':'hover:bg-blue-700'}`}>{isSaving ? <Icon name="loader-2" className="animate-spin"/> : (addRegStatus==='success' ? <Icon name="check"/> : <Icon name="plus"/>)}{addRegStatus==='success' ? '新增成功！' : '新增一筆報名'}</button></div></div></section><details className="group"><summary className="flex items-center gap-2 cursor-pointer text-slate-500 font-bold hover:text-slate-700"><Icon name="code" size={16}/> 進階：原始 CSV 資料庫 (全量編輯)</summary><div className="mt-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200"><textarea className="w-full h-96 p-4 font-mono text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none" value={csvInput} onChange={e=>setCsvInput(e.target.value)} onFocus={() => isEditingRef.current = true} onBlur={() => isEditingRef.current = false} /><div className="mt-4 flex justify-between items-center"><div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-200"><Icon name="lock" size={16} className="text-slate-400"/><span className="text-xs font-bold text-slate-600">管理員安全設定</span><input type="password" placeholder="輸入新密碼..." className="px-2 py-1 border rounded text-xs w-32 outline-none focus:border-blue-400" value={newPasswordInput} onChange={e=>setNewPasswordInput(e.target.value)} /><button onClick={handleUpdatePassword} className={`text-xs text-white px-3 py-1 rounded transition-colors ${passwordSaveStatus==='success' ? 'bg-green-500' : 'bg-slate-600 hover:bg-slate-700'}`}>{passwordSaveStatus==='success' ? '已更新' : (passwordSaveStatus==='saving' ? '...' : '更新密碼')}</button></div><button onClick={() => handleSaveCSV(csvInput)} disabled={isSaving || csvSaveStatus === 'saving'} className={`text-white px-6 py-2 rounded-xl flex items-center gap-2 shadow-md transition-all ${csvSaveStatus === 'success' ? 'bg-green-600 hover:bg-green-700' : csvSaveStatus === 'error' ? 'bg-red-600 hover:bg-red-700' : 'bg-slate-800 hover:bg-slate-900'}`}>{csvSaveStatus === 'saving' ? <Icon name="loader-2" className="animate-spin"/> : csvSaveStatus === 'success' ? <Icon name="check"/> : <Icon name="save"/>} <span>{csvSaveStatus === 'saving' ? '儲存中...' : csvSaveStatus === 'success' ? '✅ 已成功儲存！' : '儲存變更'}</span></button><span className="text-xs text-slate-400 ml-2">{csvSaveStatus === 'success' ? `上次儲存: ${new Date().toLocaleTimeString()}` : ''}</span></div></div></details><DataRescueTab currentAppId={dbSource} onSwitch={handleDbSourceChange} /></div>}
+                        {activeTab === 'import' && <div className="fade-in max-w-6xl mx-auto space-y-8 pb-20">
+                            <header className="flex flex-col md:flex-row justify-between items-center gap-4">
+                                <h2 className="text-2xl font-bold">資料庫與報名管理</h2>
+                                <div className="flex gap-2 items-center w-full md:w-auto justify-end">
+                                    <div className="text-xs text-slate-400 bg-slate-100 px-2 py-1 rounded">來源: {dbSource}</div>
+                                    <select className="text-xs p-1 border rounded" onChange={e=>handleDbSourceChange(e.target.value)} value={dbSource}><option value="crm-system-v1">v1 (您的真實資料)</option><option value="default-app-id">Default (舊版測試)</option></select>
+                                    <button onClick={()=>setShowGlobalRules(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-indigo-700 shadow-md whitespace-nowrap"><Icon name="settings" size={18}/> 預設狀態規則</button>
+                                    {/* [修改] 已移除批量匯入按鈕 */}
+                                </div>
+                            </header>
+                            
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden table-container">
+                                <div className="p-4 border-b border-slate-100 flex gap-4 sticky left-0">
+                                    <div className="relative flex-1">
+                                        <Icon name="search" className="absolute left-3 top-2.5 text-slate-400" size={18}/>
+                                        <input type="text" placeholder="搜尋姓名、活動或日期..." className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500" value={importSearch} onChange={e=>setImportSearch(e.target.value)}/>
+                                    </div>
+                                </div>
+                                <div className="max-h-[600px] overflow-y-auto">
+                                    {/* [修改] 移除 min-w-[800px] 以解決右側空白，改用 w-full */}
+                                    <table className="w-full text-left text-sm">
+                                        <thead className="bg-slate-50 border-b border-slate-100 text-slate-500 sticky top-0">
+                                            <tr>
+                                                <th className="p-2 md:p-4 whitespace-nowrap">日期</th>
+                                                <th className="p-2 md:p-4 whitespace-nowrap">活動</th>
+                                                <th className="p-2 md:p-4 whitespace-nowrap">客戶</th>
+                                                {/* [修改] 金額欄位：手機隱藏 (hidden)，電腦顯示 (md:table-cell) */}
+                                                <th className="p-4 hidden md:table-cell text-right">金額</th>
+                                                <th className="p-2 md:p-4 text-right">操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {(() => {
+                                                // [新增] 排序邏輯：靠近今天的排前面，已結束的排後面
+                                                const today = new Date();
+                                                today.setHours(0, 0, 0, 0);
+                                                
+                                                const filtered = parsedData.filter(r => !importSearch || JSON.stringify(r).toLowerCase().includes(importSearch.toLowerCase()));
+                                                
+                                                const sorted = filtered.sort((a, b) => {
+                                                    const dateA = new Date(a.date);
+                                                    const dateB = new Date(b.date);
+                                                    if (isNaN(dateA)) return 1;
+                                                    if (isNaN(dateB)) return -1;
+                                                    
+                                                    const isAFuture = dateA >= today;
+                                                    const isBFuture = dateB >= today;
+                                                    
+                                                    // 未來行程排在過去行程之前
+                                                    if (isAFuture && !isBFuture) return -1;
+                                                    if (!isAFuture && isBFuture) return 1;
+                                                    
+                                                    // 都是未來：日期越小越前面 (升序)
+                                                    if (isAFuture) return dateA - dateB;
+                                                    
+                                                    // 都是過去：日期越大越前面 (離今天越近越前面 -> 降序)
+                                                    return dateB - dateA;
+                                                });
+                                                
+                                                return sorted.map((row) => (
+                                                    <tr key={row.id} className="hover:bg-slate-50">
+                                                        <td className="p-2 md:p-4 text-slate-600 text-xs md:text-sm whitespace-nowrap">{row.date}</td>
+                                                        <td className="p-2 md:p-4 font-medium text-slate-700 text-xs md:text-sm">{row.eventName}</td>
+                                                        <td className="p-2 md:p-4 text-xs md:text-sm truncate max-w-[80px] md:max-w-none">{row.customerName}</td>
+                                                        {/* [修改] 金額內容：手機隱藏，電腦顯示 */}
+                                                        <td className="p-4 font-mono hidden md:table-cell text-right">${row.price}</td>
+                                                        <td className="p-2 md:p-4 text-right flex justify-end gap-1 md:gap-2">
+                                                            {/* 編輯按鈕：手機電腦皆顯示 */}
+                                                            <button onClick={()=>setEditingRow(row)} className="p-2 text-blue-600 hover:bg-blue-50 rounded border border-transparent hover:border-blue-100">
+                                                                <Icon name="edit-2" size={16}/>
+                                                            </button>
+                                                            {/* [修改] 刪除按鈕：手機隱藏 (hidden)，電腦顯示 (md:inline-block) */}
+                                                            <button onClick={()=>handleDeleteRow(row.id)} className="p-2 text-red-400 hover:bg-red-50 rounded hidden md:inline-block">
+                                                                <Icon name="trash-2" size={16}/>
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ));
+                                            })()}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <section>
+                                <h2 className="text-2xl font-bold mb-6">新增報名資料</h2>
+                                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 space-y-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div><label className="block text-xs font-bold text-slate-500 mb-1">日期 *</label><input type="date" className="w-full p-2 border rounded-lg" value={newReg.date} onChange={e=>setNewReg({...newReg, date: e.target.value})} /></div>
+                                        <div><label className="block text-xs font-bold text-slate-500 mb-1">活動名稱 *</label><input type="text" className="w-full p-2 border rounded-lg" placeholder="例如: 登山團" value={newReg.eventName} onChange={e=>setNewReg({...newReg, eventName: e.target.value})} /></div>
+                                        <div><label className="block text-xs font-bold text-slate-500 mb-1">講師</label><input type="text" className="w-full p-2 border rounded-lg" placeholder="講師姓名" value={newReg.instructor} onChange={e=>setNewReg({...newReg, instructor: e.target.value})} /></div>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div><label className="block text-xs font-bold text-slate-500 mb-1">客戶姓名 *</label><input type="text" className="w-full p-2 border rounded-lg" placeholder="王小明" value={newReg.customerName} onChange={e=>setNewReg({...newReg, customerName: e.target.value})} /></div>
+                                        <div><label className="block text-xs font-bold text-slate-500 mb-1">金額</label><input type="number" className="w-full p-2 border rounded-lg" placeholder="3000" value={newReg.price} onChange={e=>setNewReg({...newReg, price: e.target.value})} /></div>
+                                        <div><label className="block text-xs font-bold text-slate-500 mb-1">交通方式</label><select className="w-full p-2 border rounded-lg" value={newReg.transport} onChange={e=>setNewReg({...newReg, transport: e.target.value})}><option value="">未定</option><option value="共乘">共乘</option><option value="自行前往">自行前往</option></select></div>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div><label className="block text-xs font-bold text-slate-500 mb-1">訂購日</label><input type="date" className="w-full p-2 border rounded-lg" value={newReg.orderDate} onChange={e=>setNewReg({...newReg, orderDate: e.target.value})} /></div>
+                                        <div><label className="block text-xs font-bold text-slate-500 mb-1">報名管道</label><input type="text" className="w-full p-2 border rounded-lg" placeholder="FB, IG..." value={newReg.source} onChange={e=>setNewReg({...newReg, source: e.target.value})} /></div>
+                                        <div><label className="block text-xs font-bold text-slate-500 mb-1">手機</label><input type="text" className="w-full p-2 border rounded-lg" placeholder="09xx..." value={newReg.phone} onChange={e=>setNewReg({...newReg, phone: e.target.value})} /></div>
+                                    </div>
+                                    <div className="flex justify-end pt-2"><button onClick={handleAddManualReg} disabled={isSaving} className={`bg-blue-600 text-white px-6 py-2 rounded-lg flex items-center gap-2 transition-colors ${addRegStatus==='success'?'bg-green-600 hover:bg-green-700':'hover:bg-blue-700'}`}>{isSaving ? <Icon name="loader-2" className="animate-spin"/> : (addRegStatus==='success' ? <Icon name="check"/> : <Icon name="plus"/>)}{addRegStatus==='success' ? '新增成功！' : '新增一筆報名'}</button></div>
+                                </div>
+                            </section>
+                            
+                            <details className="group"><summary className="flex items-center gap-2 cursor-pointer text-slate-500 font-bold hover:text-slate-700"><Icon name="code" size={16}/> 進階：原始 CSV 資料庫 (全量編輯)</summary><div className="mt-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200"><textarea className="w-full h-96 p-4 font-mono text-sm bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none" value={csvInput} onChange={e=>setCsvInput(e.target.value)} onFocus={() => isEditingRef.current = true} onBlur={() => isEditingRef.current = false} /><div className="mt-4 flex justify-between items-center"><div className="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-200"><Icon name="lock" size={16} className="text-slate-400"/><span className="text-xs font-bold text-slate-600">管理員安全設定</span><input type="password" placeholder="輸入新密碼..." className="px-2 py-1 border rounded text-xs w-32 outline-none focus:border-blue-400" value={newPasswordInput} onChange={e=>setNewPasswordInput(e.target.value)} /><button onClick={handleUpdatePassword} className={`text-xs text-white px-3 py-1 rounded transition-colors ${passwordSaveStatus==='success' ? 'bg-green-500' : 'bg-slate-600 hover:bg-slate-700'}`}>{passwordSaveStatus==='success' ? '已更新' : (passwordSaveStatus==='saving' ? '...' : '更新密碼')}</button></div><button onClick={() => handleSaveCSV(csvInput)} disabled={isSaving || csvSaveStatus === 'saving'} className={`text-white px-6 py-2 rounded-xl flex items-center gap-2 shadow-md transition-all ${csvSaveStatus === 'success' ? 'bg-green-600 hover:bg-green-700' : csvSaveStatus === 'error' ? 'bg-red-600 hover:bg-red-700' : 'bg-slate-800 hover:bg-slate-900'}`}>{csvSaveStatus === 'saving' ? <Icon name="loader-2" className="animate-spin"/> : csvSaveStatus === 'success' ? <Icon name="check"/> : <Icon name="save"/>} <span>{csvSaveStatus === 'saving' ? '儲存中...' : csvSaveStatus === 'success' ? '✅ 已成功儲存！' : '儲存變更'}</span></button><span className="text-xs text-slate-400 ml-2">{csvSaveStatus === 'success' ? `上次儲存: ${new Date().toLocaleTimeString()}` : ''}</span></div></div></details>
+                            
+                            <DataRescueTab currentAppId={dbSource} onSwitch={handleDbSourceChange} />
+                        </div>}
                     </main>
 
                     {showDebug && <DebugPanel onClose={()=>setShowDebug(false)} />}
@@ -1179,7 +1447,8 @@
                         instructorSchedule={instructorSchedule} 
                         onCheckInToggle={handleCheckInToggle}
                         onDeleteEvent={handleDeleteEvent}
-                        globalRules={globalRules} 
+                        globalRules={globalRules}
+                        onEditCustomer={(c) => setEditingRow(c)} // [修改] 傳入編輯函式
                     />}
                     {/* [新增] 渲染全域規則視窗 */}
                     {showGlobalRules && <GlobalRulesModal 
@@ -1190,7 +1459,8 @@
                             setShowGlobalRules(false);
                         }} 
                     />}
-                    {editingRow && <EditRowModal rowData={editingRow} existingTransports={uniqueTransports} onClose={()=>setEditingRow(null)} onSave={handleUpdateRow} />}
+                    
+{editingRow && <EditRowModal rowData={editingRow} existingTransports={uniqueTransports} onClose={()=>setEditingRow(null)} onSave={handleUpdateRow} onDelete={(id) => { handleDeleteRow(id); setEditingRow(null); }} />}
                     {showLoginModal && <LoginModal onClose={()=>setShowLoginModal(false)} onLogin={handleVerifyLogin} />}
                 </div>
             );
