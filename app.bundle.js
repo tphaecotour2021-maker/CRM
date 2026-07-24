@@ -4114,6 +4114,25 @@ const EventManagerModal = ({
       return 0;
     });
   }, [event.customers]);
+  // 每位客人參加過的總場次（身分證→手機→姓名 階梯式識別；同一天多筆算一場；含過去與未來、含當前這場）
+  const personVisitKey = c => {
+    const idNo = String(c.idNo || '').trim();
+    if (idNo) return 'id:' + idNo;
+    const phone = String(c.phone || '').trim();
+    if (phone) return 'ph:' + phone;
+    return 'nm:' + String(c.customerName || '').trim();
+  };
+  const visitCountByPerson = useMemo(() => {
+    const m = {};
+    (parsedData || []).forEach(r => {
+      const name = String(r.customerName || '').trim();
+      const date = String(r.date || '').trim();
+      if (!name || name === '開放報名中' || !date) return;
+      const k = personVisitKey(r);
+      (m[k] || (m[k] = new Set())).add(date);
+    });
+    return m;
+  }, [parsedData]);
   const carpoolCount = event.customers ? event.customers.filter(c => c.transport === '共乘').length : 0;
   const checkedInCount = event.customers ? event.customers.filter(c => c.isCheckedIn).length : 0;
   const handleTaskToggle = index => {
@@ -4504,7 +4523,13 @@ const EventManagerModal = ({
     className: "flex flex-col"
   }, React.createElement("span", {
     className: `font-medium ${c.isCheckedIn ? 'text-green-700' : 'text-slate-700'}`
-  }, c.customerName), React.createElement("span", {
+  }, c.customerName, (() => {
+    const n = (visitCountByPerson[personVisitKey(c)] || {}).size || 1;
+    return React.createElement("span", {
+      className: `ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full align-middle ${n >= 2 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-400'}`,
+      title: `這位總共參加過 ${n} 場活動（身分證→手機→姓名比對，同一天算一場，含這場）`
+    }, `${n} 場`);
+  })()), React.createElement("span", {
     className: "text-[10px] text-slate-400"
   }, c.phone || '無手機'))), React.createElement("div", {
     className: "flex items-center gap-2"
