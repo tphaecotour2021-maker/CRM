@@ -4524,11 +4524,16 @@ const EventManagerModal = ({
   }, React.createElement("span", {
     className: `font-medium ${c.isCheckedIn ? 'text-green-700' : 'text-slate-700'}`
   }, c.customerName, (() => {
-    const n = (visitCountByPerson[personVisitKey(c)] || {}).size || 1;
+    // 「到這場為止是第幾次來」：只累計日期 ≤ 本場活動日期的到訪，這場之後的報名不計
+    const dates = visitCountByPerson[personVisitKey(c)];
+    const eventDate = String(event.date || '').trim();
+    let n = 0;
+    if (dates) dates.forEach(d => { if (!eventDate || d <= eventDate) n++; });
+    n = n || 1;
     return React.createElement("span", {
       className: `ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full align-middle ${n >= 2 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-400'}`,
-      title: `這位總共參加過 ${n} 場活動（身分證→手機→姓名比對，同一天算一場，含這場）`
-    }, `${n} 場`);
+      title: `到這場為止是第 ${n} 次參加（身分證→手機→姓名比對，同一天算一場；之後的報名不計）`
+    }, `第 ${n} 次`);
   })()), React.createElement("span", {
     className: "text-[10px] text-slate-400"
   }, c.phone || '無手機'))), React.createElement("div", {
