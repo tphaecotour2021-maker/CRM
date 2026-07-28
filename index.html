@@ -437,7 +437,7 @@ function addDays(iso,n){
   return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Taipei'}).format(d);
 }
 const WD=['週日','週一','週二','週三','週四','週五','週六'];
-function dow(iso){return new Date(iso+'T00:00:00+08:00').getDay()}
+function dow(iso){const[y,m,d]=iso.split('-').map(Number);return new Date(Date.UTC(y,m-1,d)).getUTCDay()}
 
 /* ═══ 狀態 ═══ */
 const T0=todayTW(),T1=addDays(T0,WINDOW_DAYS);
