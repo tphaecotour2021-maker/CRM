@@ -329,6 +329,9 @@ const PROJECT_ID='crm-sys-4184a';
 const API_KEY='AIzaSyBtfR8N9Dw9kG3jQSfJSs0p0MLvlQaOR74';
 const BASE=`https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/artifacts/default-app-id/public/data`;
 const WINDOW_DAYS=70;
+/* 付費共乘：與舊後台同一套規則（容量固定 4 席；大安鼠/新店鼠預設無共乘） */
+const CARPOOL_CAP=4;
+const NO_CARPOOL_NAMES=new Set(['大安鼠','新店鼠']);
 
 /* rezio 產品對照（縮圖與價格，2026-07-11 抓取；改價要更新） */
 const PRODUCTS={
@@ -477,7 +480,7 @@ async function load(){
   const[mainDoc,schDoc,cfgDocs]=await Promise.all([
     fsGet('settings/main',['csvData','latestNews','mascotConfig','marqueeIcon','marqueeIconSize']),
     fsGet('settings/schedule',['companyRest','outingDays','resting']).catch(()=>({})),
-    fsList('event_configs',['displayName','time','capacity','isCancelled','link','duration']),
+    fsList('event_configs',['displayName','time','capacity','isCancelled','link','duration','carpoolDisplayMode']),
   ]);
   const sch=decodeFs({mapValue:{fields:schDoc.fields||{}}});
   REST=new Set(sch.companyRest||[]);
@@ -485,7 +488,7 @@ async function load(){
   OUTING=new Set(Object.entries(sch.outingDays||{}).filter(([,v])=>v&&v.enabled).map(([k])=>k));
   const mainF={};for(const[k,v]of Object.entries(mainDoc.fields||{}))mainF[k]=decodeFs(v);
   NEWS=(mainF.latestNews||'').trim();
-  const counts={};
+  const counts={},cpools={};
   const rows=parseCSV(mainF.csvData||'');
   for(let i=1;i<rows.length;i++){
     const v=rows[i];if(v.length<5)continue;
@@ -493,6 +496,7 @@ async function load(){
     const key=eventKeyOf(date,(v[1]||'').trim(),(v[2]||'').trim());
     if((v[3]||'').trim()==='開放報名中'){counts[key]=counts[key]||0;continue}
     counts[key]=(counts[key]||0)+1;
+    if((v[5]||'').trim()==='共乘')cpools[key]=(cpools[key]||0)+1;
   }
   const list=[];
   for(const d of cfgDocs){
@@ -515,11 +519,14 @@ async function load(){
     const code=(link.match(/\/product\/([A-Z0-9]+)/i)||[])[1]||'';
     const cap=parseInt(f.capacity,10)||12;
     const cnt=counts[eventKeyOf(date,name,instr)]??counts[id]??0;
+    const cpc=cpools[eventKeyOf(date,name,instr)]??cpools[id]??0;
+    const cpm=(f.carpoolDisplayMode==='none'||f.carpoolDisplayMode==='normal')
+      ?f.carpoolDisplayMode:(NO_CARPOOL_NAMES.has(name.trim())?'none':'normal');
     const bookable=kind==='一般'&&!!link;/* 包團/社群限定即使誤填 link 也不開報名鈕 */
     list.push({
       id,date,dow:dow(date),time:(f.time||'').slice(0,5),/* 沒填時間就不顯示，避免誤導 */
       title:kind==='包團'?'包團活動':(dn||name).trim(),/* 包團不顯示客戶名稱 */
-      instr,link,code,kind,bookable,
+      instr,link,code,kind,bookable,cnt,cpc,cpm,
       type:typeOf(dn+name),
       loc:locOf(dn+' '+name),
       cap,remaining:bookable?Math.max(0,cap-cnt):0,
@@ -655,6 +662,13 @@ function seatsHtml(s){
   if(s.remaining<=5)return`<span class="seats low">剩 ${s.remaining} 位</span>`;
   return`<span class="seats">名額充足</span>`;
 }
+/* 付費共乘提示（文案與舊後台一致；包團不顯示） */
+function carpoolHtml(s){
+  if(s.kind==='包團')return'';
+  if(s.cpm==='none')return'<div class="alt cph">本活動無共乘</div>';
+  const left=Math.max(0,CARPOOL_CAP-s.cpc);
+  return`<div class="alt cph">🚗 ${left>0?`付費共乘剩餘 ${left} 位`:'付費共乘基本已滿，可洽詢粉專客服'}</div>`;
+}
 function altDates(s){
   /* 同一 rezio 產品、未來、還有位的其他日期（最多 3 個） */
   if(!s.code)return[];
@@ -697,6 +711,7 @@ function renderList(){
           ${special?`<span class="tp kind ${s.kind==='包團'?'k1':'k2'}">${s.kind}</span>`:''}
           ${s.loc?`<span class="locn">📍${s.loc}</span>`:''}${s.time?`<span>${s.time}</span>`:''}${s.instr&&s.kind!=='包團'?`<span>講師 ${s.instr}</span>`:''}</div>
         <h3>${s.title}</h3>
+        ${carpoolHtml(s)}
         ${alts.length?`<div class="alt">這場滿了，同路線還有位：${alts.map(a=>{
           const[,m2,d2]=a.date.split('-');
           return`<a href="#" data-jump="${a.date}">${+m2}/${+d2} ${WD[a.dow]}</a>`}).join('、')}</div>`:''}
@@ -704,6 +719,7 @@ function renderList(){
       </div>
       <div class="act">
         ${s.bookable?seatsHtml(s):`<span class="seats full">${s.kind==='包團'?'不開放報名':'社群成員限定'}</span>`}
+        ${s.kind==='社群限定'?seatsHtml({remaining:Math.max(0,s.cap-s.cnt)}):''}
         ${s.bookable&&!full?`<a class="book" href="${trackLink(s.link,s.code)}" target="_blank" rel="noopener">報名</a>`:''}
       </div>
     </div>`;
