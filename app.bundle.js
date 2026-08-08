@@ -4046,6 +4046,8 @@ const EventManagerModal = ({
   const [displayName, setDisplayName] = useState(config?.displayName || '');
   const [activityCategory, setActivityCategory] = useState(config?.activityCategory || '');
   const [carpoolDisplayMode, setCarpoolDisplayMode] = useState(resolveCarpoolDisplayMode(config?.carpoolDisplayMode, event.eventName));
+  const [carpoolCapacity, setCarpoolCapacity] = useState(config?.carpoolCapacity || '');
+  const [carpoolPrice, setCarpoolPrice] = useState(config?.carpoolPrice || '');
   const inferredPrivateGroupEvent = !!config?.isPrivateGroupEvent || config?.tags?.levels === '包團' || String(config?.displayName || event.eventName || '').includes('包團');
   const [isPrivateGroupEvent, setIsPrivateGroupEvent] = useState(inferredPrivateGroupEvent);
   const [privateGroupLabel, setPrivateGroupLabel] = useState(config?.privateGroupLabel || '此為包團活動');
@@ -4091,7 +4093,7 @@ const EventManagerModal = ({
     const originalInstr = event.instructor || '';
     const originalLeadInstructors = config?.leadInstructors && config.leadInstructors.length > 0 ? config.leadInstructors : event.instructor ? event.instructor.split(/[&,]/).map(s => s.trim()).filter(Boolean) : [];
     const originalSupportInstructors = config?.supportInstructors || [];
-    return internalName !== event.eventName || capacity !== (config?.capacity || 12) || eventNote !== (config?.note || '') || eventTime !== (config?.time || '') || eventTimeSlot !== normalizeScheduleTimeSlot(config?.timeSlot, inferScheduleTimeSlot(config?.time || '')) || eventLink !== (config?.link || '') || backendColor !== (config?.backendColor || '#eff6ff') || displayName !== (config?.displayName || '') || activityCategory !== (config?.activityCategory || '') || carpoolDisplayMode !== resolveCarpoolDisplayMode(config?.carpoolDisplayMode, event.eventName) || isPrivateGroupEvent !== inferredPrivateGroupEvent || privateGroupLabel !== (config?.privateGroupLabel || '此為包團活動') || currentInstr !== originalInstr || JSON.stringify(leadInstructors) !== JSON.stringify(originalLeadInstructors) || JSON.stringify(supportInstructors) !== JSON.stringify(originalSupportInstructors) || JSON.stringify(tasks) !== JSON.stringify(config?.tasks || DEFAULT_TASKS_TEMPLATE) || JSON.stringify(tags) !== JSON.stringify(config?.tags || {
+    return internalName !== event.eventName || capacity !== (config?.capacity || 12) || eventNote !== (config?.note || '') || eventTime !== (config?.time || '') || eventTimeSlot !== normalizeScheduleTimeSlot(config?.timeSlot, inferScheduleTimeSlot(config?.time || '')) || eventLink !== (config?.link || '') || backendColor !== (config?.backendColor || '#eff6ff') || displayName !== (config?.displayName || '') || activityCategory !== (config?.activityCategory || '') || carpoolDisplayMode !== resolveCarpoolDisplayMode(config?.carpoolDisplayMode, event.eventName) || String(carpoolCapacity) !== String(config?.carpoolCapacity || '') || String(carpoolPrice) !== String(config?.carpoolPrice || '') || isPrivateGroupEvent !== inferredPrivateGroupEvent || privateGroupLabel !== (config?.privateGroupLabel || '此為包團活動') || currentInstr !== originalInstr || JSON.stringify(leadInstructors) !== JSON.stringify(originalLeadInstructors) || JSON.stringify(supportInstructors) !== JSON.stringify(originalSupportInstructors) || JSON.stringify(tasks) !== JSON.stringify(config?.tasks || DEFAULT_TASKS_TEMPLATE) || JSON.stringify(tags) !== JSON.stringify(config?.tags || {
       levels: '',
       types: '',
       locations: ''
@@ -4223,6 +4225,8 @@ const EventManagerModal = ({
       activityCategory: activityCategory || '',
       templateCategory: normalizeQuickCreateTemplateCategory(matchedTemplate?.templateCategory, cleanInternalName),
       carpoolDisplayMode,
+      carpoolCapacity: parseInt(carpoolCapacity, 10) || 0,
+      carpoolPrice: parseInt(carpoolPrice, 10) || 0,
       isPrivateGroupEvent,
       privateGroupLabel: privateGroupLabel || '此為包團活動',
       isCancelled,
@@ -4289,6 +4293,8 @@ const EventManagerModal = ({
       displayName,
       activityCategory,
       carpoolDisplayMode,
+      carpoolCapacity: parseInt(carpoolCapacity, 10) || 0,
+      carpoolPrice: parseInt(carpoolPrice, 10) || 0,
       isPrivateGroupEvent,
       privateGroupLabel: privateGroupLabel || '此為包團活動',
       tags,
@@ -4622,6 +4628,24 @@ const EventManagerModal = ({
     value: capacity,
     onChange: e => setCapacity(e.target.value),
     className: "w-full px-2 py-1.5 text-center border border-slate-300 rounded-lg font-bold outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50"
+  })), React.createElement("div", null, React.createElement("span", {
+    className: "text-slate-500 text-xs font-bold mb-1 block"
+  }, "\u5171\u4E58\u540D\u984D"), React.createElement("input", {
+    type: "number",
+    min: "0",
+    placeholder: "\u672A\u8A2D\u5B9A=4",
+    value: carpoolCapacity,
+    onChange: e => setCarpoolCapacity(e.target.value),
+    className: "w-full px-2 py-1.5 text-center border border-slate-300 rounded-lg font-bold outline-none focus:ring-2 focus:ring-orange-400 bg-slate-50"
+  })), React.createElement("div", null, React.createElement("span", {
+    className: "text-slate-500 text-xs font-bold mb-1 block"
+  }, "\u5171\u4E58\u55AE\u50F9"), React.createElement("input", {
+    type: "number",
+    min: "0",
+    placeholder: "\u672A\u8A2D\u5B9A\u4E0D\u958B\u653E\u52A0\u8CFC",
+    value: carpoolPrice,
+    onChange: e => setCarpoolPrice(e.target.value),
+    className: "w-full px-2 py-1.5 text-center border border-slate-300 rounded-lg font-bold outline-none focus:ring-2 focus:ring-orange-400 bg-slate-50"
   })), React.createElement("div", null, React.createElement("span", {
     className: "text-slate-500 text-xs font-bold mb-1 block flex items-center gap-1",
     title: "\u6D3B\u52D5\u5BE6\u969B\u8209\u8FA6\u7684\u5929\u6578"
