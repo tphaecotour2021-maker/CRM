@@ -5,6 +5,37 @@ const {
   useLayoutEffect,
   useRef
 } = React;
+const CalendarCellScroller = ({ children }) => {
+  const scrollRef = useRef(null);
+  const [hiddenCount, setHiddenCount] = useState(0);
+  const updateOverflowHint = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const viewBottom = el.scrollTop + el.clientHeight;
+    const isOverflowing = el.scrollHeight - el.clientHeight > 4;
+    const atBottom = viewBottom >= el.scrollHeight - 4;
+    if (!isOverflowing || atBottom) {
+      setHiddenCount(0);
+      return;
+    }
+    const hidden = Array.from(el.children).filter(child => child.offsetTop + child.offsetHeight > viewBottom + 2).length;
+    setHiddenCount(Math.max(hidden, 1));
+  };
+  useEffect(() => {
+    updateOverflowHint();
+  });
+  return React.createElement("div", {
+    className: "relative"
+  }, React.createElement("div", {
+    ref: scrollRef,
+    onScroll: updateOverflowHint,
+    className: "relative space-y-1 overflow-y-auto max-h-[120px] no-scrollbar overscroll-contain"
+  }, children), hiddenCount > 0 && React.createElement("div", {
+    className: "pointer-events-none absolute bottom-0 left-0 right-0 h-7 cal-fade-up flex items-end justify-center"
+  }, React.createElement("span", {
+    className: "text-[9px] font-bold text-slate-500 bg-white/95 border border-slate-200 rounded-full px-1.5 py-0.5 mb-0.5 shadow-sm"
+  }, "▼ 還有 ", hiddenCount, " 項")));
+};
 const firebaseConfig = {
   apiKey: "AIzaSyBtfR8N9Dw9kG3jQSfJSs0p0MLvlQaOR74",
   authDomain: "crm-sys-4184a.firebaseapp.com",
@@ -15387,9 +15418,7 @@ const MainApp = () => {
       size: 14
     }))), companyRestDates.includes(dateStr) ? React.createElement("div", {
       className: "flex items-center justify-center h-[100px] text-slate-300 font-bold text-2xl select-none bg-slate-50/50 rounded-lg"
-    }, "\u2715") : React.createElement("div", {
-      className: "space-y-1 overflow-y-auto max-h-[120px] no-scrollbar"
-    }, dayItems.map((item, idx) => {
+    }, "\u2715") : React.createElement(CalendarCellScroller, null, dayItems.map((item, idx) => {
       const {
         type,
 	        evt,
@@ -15473,7 +15502,7 @@ const MainApp = () => {
       }, "@", safeInstructor))) : React.createElement("div", {
         className: "flex items-center gap-1"
       }, safeLabel));
-	    })), restDisplayItems.length > 0 && !companyRestDates.includes(dateStr) && React.createElement("div", {
+	    }), restDisplayItems.length > 0 && !companyRestDates.includes(dateStr) && React.createElement("div", {
 	      className: "text-[10px] text-red-400 flex flex-wrap gap-1 mt-1"
 	    }, restDisplayItems.map(item => {
 	      const safeName = toSafeDisplayText(item.name, '').trim();
@@ -15483,14 +15512,14 @@ const MainApp = () => {
 	        className: "bg-red-50 px-1 rounded"
 	      }, safeName, safeSlotLabel, "\u4F11") : null;
 	    })), outingDays[dateStr]?.enabled && !companyRestDates.includes(dateStr) && React.createElement("div", {
-      className: "absolute bottom-1 right-1 max-w-[90%] text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 leading-tight shadow-sm pointer-events-none"
+      className: "mt-1 w-fit max-w-full text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 leading-tight shadow-sm pointer-events-none"
     }, React.createElement("span", {
       className: "font-bold"
     }, "\u5834\u52D8"), Array.isArray(outingDays[dateStr]?.people) && outingDays[dateStr].people.length > 0 && React.createElement("span", {
       className: "ml-1"
     }, ": ", outingDays[dateStr].people.map(person => toSafeDisplayText(person, '').trim()).filter(Boolean).join('、'))), isInternalDay && !companyRestDates.includes(dateStr) && React.createElement("div", {
-      className: "absolute bottom-1 left-1 max-w-[80%] text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5 leading-tight shadow-sm pointer-events-none"
-    }, "\u5167\u90E8", internalLabel ? `：${internalLabel}` : '')));
+      className: "mt-1 w-fit max-w-full text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5 leading-tight shadow-sm pointer-events-none"
+    }, "\u5167\u90E8", internalLabel ? `：${internalLabel}` : ''))));
   }))))), activeTab === 'projects' && React.createElement(ProjectConsoleTab, {
     user: user,
     db: db,
