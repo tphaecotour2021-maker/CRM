@@ -527,7 +527,7 @@ async function load(){
       id,date,dow:dow(date),time:(f.time||'').slice(0,5),/* 沒填時間就不顯示，避免誤導 */
       title:kind==='包團'?'包團活動':(dn||name).trim(),/* 包團不顯示客戶名稱 */
       instr,link,code,kind,bookable,cnt,cpc,cpm,
-      type:typeOf(dn+name),
+      type:kind==='包團'?'其他':typeOf(dn+name),/* 包團不從內部名稱猜分類（名稱含客名與「夜觀」等字會誤判成新手） */
       loc:locOf(dn+' '+name),
       cap,remaining:bookable?Math.max(0,cap-cnt):0,
       runs:kind!=='一般'||cnt>0, /* 「開成」＝包團/社群場、或已有人報名 */
@@ -707,7 +707,7 @@ function renderList(){
     html+=`<div class="row ${full?'full':''} ${special?'priv':''}">
       ${s.img?`<img class="thumb" src="${s.img}" alt="" loading="lazy">`:`<div class="thumb ph">${TYPE_EMOJI[s.type]}</div>`}
       <div class="info">
-        <div class="l1"><span class="tp" style="color:${TYPE_COLOR[s.type]}">${s.type}</span>
+        <div class="l1">${s.kind==='包團'?'':`<span class="tp" style="color:${TYPE_COLOR[s.type]}">${s.type}</span>`}
           ${special?`<span class="tp kind ${s.kind==='包團'?'k1':'k2'}">${s.kind}</span>`:''}
           ${s.loc?`<span class="locn">📍${s.loc}</span>`:''}${s.time?`<span>${s.time}</span>`:''}${s.instr&&s.kind!=='包團'?`<span>講師 ${s.instr}</span>`:''}</div>
         <h3>${s.title}</h3>
