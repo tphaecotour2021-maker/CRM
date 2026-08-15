@@ -434,6 +434,15 @@ function typeOf(n){
   if(/新手|夜觀/.test(n))return'新手';
   return'其他';
 }
+/* 分類以後台 event_configs.tags 為準（2026-08-15 世祥指定）。
+   levels=新手 是唯一的新手判定；tags.types 對映前台分類；
+   「特別活動」與沒標的場回傳 null → 交給 typeOf 名稱備援 */
+const TAG_TYPE_MAP={'夜訪飛鼠':'飛鼠','夜訪蛇類':'蛇','夜訪青蛙':'蛙','夜訪昆蟲':'昆蟲','夜訪螢火蟲':'昆蟲','下班後走走':'走走','夜訪野兔':'其他','日訪鳥類':'其他','夜訪蛛蛛':'其他'};
+function typeFromTags(t){
+  if(!t)return null;
+  if(t.levels==='新手')return'新手';
+  return TAG_TYPE_MAP[(t.types||'').trim()]||null;
+}
 function todayTW(){return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Taipei'}).format(new Date())}
 function addDays(iso,n){
   const d=new Date(iso+'T00:00:00+08:00');d.setDate(d.getDate()+n);
@@ -480,7 +489,7 @@ async function load(){
   const[mainDoc,schDoc,cfgDocs]=await Promise.all([
     fsGet('settings/main',['csvData','latestNews','mascotConfig','marqueeIcon','marqueeIconSize']),
     fsGet('settings/schedule',['companyRest','outingDays','resting']).catch(()=>({})),
-    fsList('event_configs',['displayName','time','capacity','isCancelled','link','duration','carpoolDisplayMode']),
+    fsList('event_configs',['displayName','time','capacity','isCancelled','link','duration','carpoolDisplayMode','tags']),
   ]);
   const sch=decodeFs({mapValue:{fields:schDoc.fields||{}}});
   REST=new Set(sch.companyRest||[]);
@@ -523,11 +532,13 @@ async function load(){
     const cpm=(f.carpoolDisplayMode==='none'||f.carpoolDisplayMode==='normal')
       ?f.carpoolDisplayMode:(NO_CARPOOL_NAMES.has(name.trim())?'none':'normal');
     const bookable=kind==='一般'&&!!link;/* 包團/社群限定即使誤填 link 也不開報名鈕 */
+    const tg=f.tags||{};
+    let type=kind==='包團'?'其他':(typeFromTags(tg)||typeOf(dn+name));
+    if(type==='新手'&&tg.levels&&tg.levels!=='新手')type='其他';/* 後台有標 levels 卻非新手 → 名稱含「夜觀」也不判新手 */
     list.push({
       id,date,dow:dow(date),time:(f.time||'').slice(0,5),/* 沒填時間就不顯示，避免誤導 */
       title:kind==='包團'?'包團活動':(dn||name).trim(),/* 包團不顯示客戶名稱 */
-      instr,link,code,kind,bookable,cnt,cpc,cpm,
-      type:kind==='包團'?'其他':typeOf(dn+name),/* 包團不從內部名稱猜分類（名稱含客名與「夜觀」等字會誤判成新手） */
+      instr,link,code,kind,bookable,cnt,cpc,cpm,type,
       loc:locOf(dn+' '+name),
       cap,remaining:bookable?Math.max(0,cap-cnt):0,
       runs:kind!=='一般'||cnt>0, /* 「開成」＝包團/社群場、或已有人報名 */
