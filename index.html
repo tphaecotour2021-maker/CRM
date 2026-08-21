@@ -459,9 +459,11 @@ const FB_DM='https://m.me/TPHAEcotourism';
 /* 可包場的日子：非公休、非出遊日、沒被多天活動（如大小雪山 7/18-19）蓋住，
    且當天「開成」的單日活動 ≤ 1 場。回傳 Map(日期→開成場數) */
 const CHARTER_STAFF=3;  // 可帶團總人力（規則見下）
-/* 當天休假人數：resting[date] 的 all ∪ evening（活動多在晚上）去重計人 */
+/* 當天休假人數。resting 兩種格式都要吃（與 chooser.html 一致）：
+   舊制物件 {all:[],evening:[],...}（晚上活動看 all∪evening）、新制純陣列 ['玟希']（視為整天休） */
 function leaveCount(d){
   const r=RESTING[d]; if(!r)return 0;
+  if(Array.isArray(r))return new Set(r.map(x=>String(x).trim()).filter(Boolean)).size;
   return new Set([...(r.all||[]),...(r.evening||[])]).size;
 }
 function charterDays(){
