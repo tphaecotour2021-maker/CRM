@@ -402,20 +402,9 @@ function eventKeyOf(date,name,instr){
   const s=instr?instr.split(/[&,]/).map(x=>x.trim()).sort().join(' & '):'';
   return `${date}_${name}_${s}`.replace(/[\/\\#\?]/g,'-');
 }
-function parseCSV(t){
-  const rows=[];let f='',row=[],q=false;
-  const pf=()=>{row.push(f);f=''},pr=()=>{if(row.length>1||row[0]!=='')rows.push(row);row=[]};
-  for(let i=0;i<t.length;i++){const c=t[i];
-    if(q){if(c==='"'){if(t[i+1]==='"'){f+='"';i++}else q=false}else f+=c}
-    else if(c==='"')q=true;else if(c===',')pf();else if(c==='\n'){pf();pr()}else if(c!=='\r')f+=c}
-  pf();pr();return rows;
-}
-function normDate(s){
-  s=String(s||'').trim();
-  const m=s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
-  if(!m)return'';
-  return `${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`;
-}
+/* 2026-07-29 資安修補：前台不再下載報名 CSV（含身分證／生日／手機／Email）。
+   名額改讀後台預先算好的去識別化文件 settings/public_counts。
+   原本的 parseCSV／normDate 只服務 csvData 計數，已一併移除。 */
 /* 地點：從場次名稱抽取（順序重要，先匹配子地名） */
 const LOC_RULES=[['大溝','內湖'],['內溝','內湖'],['內湖','內湖'],['富陽','大安'],['大安','大安'],
  ['中正山','北投'],['北投','北投'],['廣興','新店'],['四崁水','新店'],['二叭子','新店'],['新店','新店'],
@@ -454,6 +443,7 @@ function dow(iso){const[y,m,d]=iso.split('-').map(Number);return new Date(Date.U
 /* ═══ 狀態 ═══ */
 const T0=todayTW(),T1=addDays(T0,WINDOW_DAYS);
 let SESSIONS=[],BYDATE=new Map(),NEWS='',REST=new Set(),OUTING=new Set(),RESTING={};
+let COUNTS_OK=true;  /* public_counts 有沒有讀到；false 時名額一律顯示「名額請洽報名頁」 */
 let fType='全部',fSeats=false,fWeekend=false,fDate=null,fCharter=false,fLoc='全部';
 const FB_DM='https://m.me/TPHAEcotourism';
 /* 可包場的日子：非公休、非出遊日、沒被多天活動（如大小雪山 7/18-19）蓋住，
@@ -488,8 +478,11 @@ function charterDays(){
 let calY=+T0.slice(0,4),calM=+T0.slice(5,7); // 顯示中的月份
 
 async function load(){
-  const[mainDoc,schDoc,cfgDocs]=await Promise.all([
-    fsGet('settings/main',['csvData','latestNews','mascotConfig','marqueeIcon','marqueeIconSize']),
+  /* settings/public_counts：後台存檔時寫入的去識別化文件（counts / latestNews / 吉祥物與跑馬燈設定）。
+     讀不到就走「名額未知」模式，場次照樣上牆——絕對不再 fallback 去讀 settings/main。 */
+  const[pubDoc,schDoc,cfgDocs]=await Promise.all([
+    fsGet('settings/public_counts',['counts','carpools','latestNews','mascotConfig','marqueeIcon','marqueeIconSize'])
+      .catch(e=>{console.warn('public_counts 讀取失敗，改用名額未知模式：',e);return null}),
     fsGet('settings/schedule',['companyRest','outingDays','resting']).catch(()=>({})),
     fsList('event_configs',['displayName','time','capacity','isCancelled','link','duration','carpoolDisplayMode','tags']),
   ]);
@@ -497,18 +490,13 @@ async function load(){
   REST=new Set(sch.companyRest||[]);
   RESTING=sch.resting||{};
   OUTING=new Set(Object.entries(sch.outingDays||{}).filter(([,v])=>v&&v.enabled).map(([k])=>k));
-  const mainF={};for(const[k,v]of Object.entries(mainDoc.fields||{}))mainF[k]=decodeFs(v);
+  const mainF={};for(const[k,v]of Object.entries((pubDoc&&pubDoc.fields)||{}))mainF[k]=decodeFs(v);
   NEWS=(mainF.latestNews||'').trim();
-  const counts={},cpools={};
-  const rows=parseCSV(mainF.csvData||'');
-  for(let i=1;i<rows.length;i++){
-    const v=rows[i];if(v.length<5)continue;
-    const date=normDate(v[0]);if(!date||date<T0||date>T1)continue;
-    const key=eventKeyOf(date,(v[1]||'').trim(),(v[2]||'').trim());
-    if((v[3]||'').trim()==='開放報名中'){counts[key]=counts[key]||0;continue}
-    counts[key]=(counts[key]||0)+1;
-    if((v[5]||'').trim()==='共乘')cpools[key]=(cpools[key]||0)+1;
-  }
+  const counts=(mainF.counts&&typeof mainF.counts==='object'&&!Array.isArray(mainF.counts))?mainF.counts:{};
+  /* 共乘人數（交通方式＝共乘）同樣由後台預先算好，放在 public_counts.carpools（2026-09-06） */
+  const cpools=(mainF.carpools&&typeof mainF.carpools==='object'&&!Array.isArray(mainF.carpools))?mainF.carpools:{};
+  /* 沒有 counts 就不要假裝名額是滿的，改顯示「名額請洽報名頁」 */
+  COUNTS_OK=!!(pubDoc&&mainF.counts&&typeof mainF.counts==='object');
   const list=[];
   for(const d of cfgDocs){
     const id=decodeURIComponent(d.name.split('/').pop());
@@ -542,8 +530,12 @@ async function load(){
       title:kind==='包團'?'包團活動':(dn||name).trim(),/* 包團不顯示客戶名稱 */
       instr,link,code,kind,bookable,cnt,cpc,cpm,type,
       loc:locOf(dn+' '+name),
-      cap,remaining:bookable?Math.max(0,cap-cnt):0,
-      runs:kind!=='一般'||cnt>0, /* 「開成」＝包團/社群場、或已有人報名 */
+      cap,
+      /* 讀不到 public_counts 時：名額當「未知」（seatsUnknown），remaining 先給滿額
+         讓場次不被「還有名額」篩選誤殺，畫面上改顯示「名額請洽報名頁」 */
+      remaining:bookable?(COUNTS_OK?Math.max(0,cap-cnt):cap):0,
+      seatsUnknown:bookable&&!COUNTS_OK,
+      runs:COUNTS_OK?(kind!=='一般'||cnt>0):true, /* 「開成」＝包團/社群場、或已有人報名；未知時保守當作有開 */
       duration:Math.max(1,parseInt(f.duration,10)||1),
       img:(PRODUCTS[code]||{}).img||'',
     });
@@ -553,7 +545,7 @@ async function load(){
   BYDATE=new Map();
   for(const s of list){if(!BYDATE.has(s.date))BYDATE.set(s.date,[]);BYDATE.get(s.date).push(s)}
   if(NEWS){document.getElementById('newsTx').textContent=NEWS;document.getElementById('news').hidden=false}
-  /* 夜裡的小動物：跑馬燈圖示、穿山甲裝飾、遭遇抽選（設定都來自後台 settings/main） */
+  /* 夜裡的小動物：跑馬燈圖示、穿山甲裝飾、遭遇抽選（設定都來自後台 settings/public_counts） */
   if(mainF.marqueeIcon){
     const ic=document.getElementById('newsIcon');
     ic.src='./'+encodeURIComponent(mainF.marqueeIcon);
@@ -670,6 +662,7 @@ document.getElementById('nextM').onclick=()=>{calM++;if(calM>12){calM=1;calY++}r
 
 /* ═══ 時間軸 ═══ */
 function seatsHtml(s){
+  if(s.seatsUnknown)return'<span class="seats">名額請洽報名頁</span>';/* public_counts 讀不到時的防呆 */
   if(s.remaining<=0)return'<span class="seats full">已額滿</span>';
   if(s.remaining<=2)return`<span class="seats low">最後 ${s.remaining} 位</span>`;
   if(s.remaining<=5)return`<span class="seats low">剩 ${s.remaining} 位</span>`;
